@@ -2,7 +2,7 @@ module github.com/nuklai/nuklai-faucet
 
 go 1.21
 
-toolchain go1.21.5
+toolchain go1.21.9
 
 require (
 	github.com/ava-labs/avalanchego v1.10.18

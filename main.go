@@ -23,10 +23,10 @@ import (
 	"github.com/ava-labs/hypersdk/utils"
 	"go.uber.org/zap"
 
+	"github.com/nuklai/nuklai-faucet/config"
+	"github.com/nuklai/nuklai-faucet/manager"
+	frpc "github.com/nuklai/nuklai-faucet/rpc"
 	"github.com/nuklai/nuklaivm/auth"
-	"github.com/nuklai/nuklaivm/cmd/nuklai-faucet/config"
-	"github.com/nuklai/nuklaivm/cmd/nuklai-faucet/manager"
-	frpc "github.com/nuklai/nuklaivm/cmd/nuklai-faucet/rpc"
 	nconsts "github.com/nuklai/nuklaivm/consts"
 )
 
