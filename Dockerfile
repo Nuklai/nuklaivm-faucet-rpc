@@ -11,7 +11,7 @@ COPY . .
 RUN go build -o faucet
 
 # Expose the application port
-EXPOSE 9091
+EXPOSE 10591
 
 # Command to run the application
 CMD ["./faucet", "./config.json"]

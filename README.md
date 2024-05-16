@@ -26,7 +26,7 @@
 
   ```bash
   docker container rm -f nuklai-faucet;
-  docker run -d -p 9091:9091 --name nuklai-faucet nuklai-faucet;
+  docker run -d -p 10591:10591 --name nuklai-faucet nuklai-faucet;
   ```
 
 - Read the logs

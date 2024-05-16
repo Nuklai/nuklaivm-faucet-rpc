@@ -73,7 +73,8 @@ func (j *JSONRPCServer) SolveChallenge(req *http.Request, args *SolveChallengeAr
 	return nil
 }
 
-type UpdateNuklaiRPCArgs struct {
+// TODO: Make this an admin-only endpoint
+/* type UpdateNuklaiRPCArgs struct {
 	NuklaiRPCUrl string `json:"nuklaiRPCUrl"`
 }
 
@@ -88,4 +89,4 @@ func (j *JSONRPCServer) UpdateNuklaiRPC(req *http.Request, args *UpdateNuklaiRPC
 	}
 	reply.Success = true
 	return nil
-}
+} */
