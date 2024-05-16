@@ -19,3 +19,8 @@
 
 # Go workspace file
 go.work
+
+# Custom
+build/
+nuklai-faucet.log
+config.json.prod
