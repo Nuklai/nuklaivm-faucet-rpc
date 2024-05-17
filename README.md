@@ -11,8 +11,25 @@
 - Run
 
   ```bash
-  ./build/nuklai-faucet ./config.json
+  cp .env.example .env;
+  ./build/nuklai-faucet
   ```
+
+- Database Operations
+
+  You can use the scripts/db.sh script to interact with the SQLite database.
+
+  - Get Transactions by TxID:
+
+    ```bash
+    ./scripts/db.sh get-transaction-by-txid <TxID>
+    ```
+
+  - Get All Transactions:
+
+    ```bash
+    ./scripts/db.sh get-all-transactions
+    ```
 
 ## Build & Run with Docker
 
@@ -26,7 +43,7 @@
 
   ```bash
   docker container rm -f nuklai-faucet;
-  docker run -d -p 10591:10591 -v ./config.json:/app/config.json --name nuklai-faucet nuklai-faucet;
+  docker run --env-file .env -d -p 10591:10591 --name nuklai-faucet nuklai-faucet
   ```
 
 - Read the logs

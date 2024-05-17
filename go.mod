@@ -7,6 +7,8 @@ toolchain go1.21.9
 require (
 	github.com/ava-labs/avalanchego v1.10.18
 	github.com/ava-labs/hypersdk v0.0.16
+	github.com/joho/godotenv v1.5.1
+	github.com/mattn/go-sqlite3 v1.14.22
 	github.com/nuklai/nuklaivm v0.0.0-20240515164422-45dab75a00c9
 	go.uber.org/zap v1.26.0
 )

@@ -1,13 +1,10 @@
-// Copyright (C) 2024, AllianceBlock. All rights reserved.
-// See the file LICENSE for licensing terms.
-
 package rpc
 
 import (
+	"errors"
 	"net/http"
 
 	"github.com/ava-labs/avalanchego/ids"
-
 	"github.com/ava-labs/hypersdk/codec"
 	"github.com/nuklai/nuklaivm/consts"
 )
@@ -73,8 +70,8 @@ func (j *JSONRPCServer) SolveChallenge(req *http.Request, args *SolveChallengeAr
 	return nil
 }
 
-// TODO: Make this an admin-only endpoint
-/* type UpdateNuklaiRPCArgs struct {
+type UpdateNuklaiRPCArgs struct {
+	AdminToken   string `json:"adminToken"`
 	NuklaiRPCUrl string `json:"nuklaiRPCUrl"`
 }
 
@@ -83,10 +80,14 @@ type UpdateNuklaiRPCReply struct {
 }
 
 func (j *JSONRPCServer) UpdateNuklaiRPC(req *http.Request, args *UpdateNuklaiRPCArgs, reply *UpdateNuklaiRPCReply) error {
+	// Validate the admin token
+	if args.AdminToken != j.m.Config().AdminToken {
+		return errors.New("unauthorized user")
+	}
 	err := j.m.UpdateNuklaiRPC(req.Context(), args.NuklaiRPCUrl)
 	if err != nil {
 		return err
 	}
 	reply.Success = true
 	return nil
-} */
+}

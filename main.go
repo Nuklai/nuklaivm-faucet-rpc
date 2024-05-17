@@ -1,13 +1,7 @@
-// Copyright (C) 2024, AllianceBlock. All rights reserved.
-// See the file LICENSE for licensing terms.
-
-// main.go
-
 package main
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"net"
 	"os"
@@ -16,18 +10,15 @@ import (
 	"time"
 
 	"github.com/ava-labs/avalanchego/utils/logging"
-	"github.com/ava-labs/hypersdk/codec"
 	"github.com/ava-labs/hypersdk/crypto/ed25519"
-
 	"github.com/ava-labs/hypersdk/server"
 	"github.com/ava-labs/hypersdk/utils"
+	"github.com/joho/godotenv"
 	"go.uber.org/zap"
 
 	"github.com/nuklai/nuklai-faucet/config"
 	"github.com/nuklai/nuklai-faucet/manager"
 	frpc "github.com/nuklai/nuklai-faucet/rpc"
-	"github.com/nuklai/nuklaivm/auth"
-	nconsts "github.com/nuklai/nuklaivm/consts"
 )
 
 var (
@@ -48,6 +39,12 @@ func fatal(l logging.Logger, msg string, fields ...zap.Field) {
 }
 
 func main() {
+	err := godotenv.Load()
+	if err != nil {
+		utils.Outf("{{red}}Error loading .env file{{/}}: %v\n", err)
+		os.Exit(1)
+	}
+
 	logFactory := logging.NewFactory(logging.Config{
 		DisplayLevel: logging.Info,
 	})
@@ -58,47 +55,24 @@ func main() {
 	}
 	log := l
 
-	// Load config
-	if len(os.Args) != 2 {
-		fatal(log, "no config file specified")
-	}
-	configPath := os.Args[1]
-	rawConfig, err := os.ReadFile(configPath)
+	// Load config from environment variables
+	config, err := config.LoadConfigFromEnv()
 	if err != nil {
-		fatal(log, "cannot open config file", zap.String("path", configPath), zap.Error(err))
-	}
-	var c config.Config
-	if err := json.Unmarshal(rawConfig, &c); err != nil {
-		fatal(log, "cannot read config file", zap.Error(err))
+		fatal(log, "cannot load config from environment variables", zap.Error(err))
 	}
 
 	// Create private key
-	if len(c.PrivateKeyBytes) == 0 {
+	if len(config.PrivateKeyBytes) == 0 {
 		priv, err := ed25519.GeneratePrivateKey()
 		if err != nil {
 			fatal(log, "cannot generate private key", zap.Error(err))
 		}
-		c.PrivateKeyBytes = priv[:]
-		b, err := json.MarshalIndent(&c, "", "  ")
-		if err != nil {
-			fatal(log, "cannot marshal new config", zap.Error(err))
-		}
-		fi, err := os.Lstat(configPath)
-		if err != nil {
-			fatal(log, "cannot get file stats for config", zap.Error(err))
-		}
-		if err := os.WriteFile(configPath, b, fi.Mode().Perm()); err != nil {
-			fatal(log, "cannot write new config", zap.Error(err))
-		}
-		faucetAddress := codec.MustAddressBech32(nconsts.HRP, auth.NewED25519Address(priv.PublicKey()))
-		log.Info("created new faucet address", zap.String("address", faucetAddress))
-	} else {
-		faucetAddress := codec.MustAddressBech32(nconsts.HRP, auth.NewED25519Address(c.PrivateKey().PublicKey()))
-		log.Info("loaded faucet address", zap.String("address", faucetAddress))
+		config.PrivateKeyBytes = priv[:]
+		fatal(log, "private key should be set in .env file after generation")
 	}
 
 	// Create server
-	listenAddress := net.JoinHostPort(c.HTTPHost, fmt.Sprintf("%d", c.HTTPPort))
+	listenAddress := net.JoinHostPort(config.HTTPHost, fmt.Sprintf("%d", config.HTTPPort))
 	listener, err := net.Listen("tcp", listenAddress)
 	if err != nil {
 		fatal(log, "cannot create listener", zap.Error(err))
@@ -109,7 +83,7 @@ func main() {
 	}
 
 	// Start manager with context handling
-	manager, err := manager.New(log, &c)
+	manager, err := manager.New(log, config)
 	if err != nil {
 		fatal(log, "cannot create manager", zap.Error(err))
 	}

@@ -1,6 +1,3 @@
-// Copyright (C) 2024, AllianceBlock. All rights reserved.
-// See the file LICENSE for licensing terms.
-
 package rpc
 
 import (
@@ -8,7 +5,6 @@ import (
 	"strings"
 
 	"github.com/ava-labs/avalanchego/ids"
-
 	"github.com/ava-labs/hypersdk/requester"
 )
 
@@ -67,19 +63,17 @@ func (cli *JSONRPCClient) SolveChallenge(ctx context.Context, addr string, salt 
 	return resp.TxID, resp.Amount, err
 }
 
-// TODO: Make this an admin-only endpoint
-// UpdateNuklaiRPC updates the RPC url for Nuklai
-/* func (cli *JSONRPCClient) UpdateNuklaiRPC(ctx context.Context, newNuklaiRPCUrl string) (bool, error) {
+// UpdateNuklaiRPC updates the RPC url for Nuklai, only if admin token is valid
+func (cli *JSONRPCClient) UpdateNuklaiRPC(ctx context.Context, adminToken string, newNuklaiRPCUrl string) (bool, error) {
 	resp := new(UpdateNuklaiRPCReply)
 	err := cli.requester.SendRequest(
 		ctx,
 		"updateNuklaiRPC",
 		&UpdateNuklaiRPCArgs{
+			AdminToken:   adminToken,
 			NuklaiRPCUrl: newNuklaiRPCUrl,
 		},
 		resp,
 	)
-
 	return resp.Success, err
 }
-*/

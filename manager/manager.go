@@ -1,6 +1,3 @@
-// Copyright (C) 2024, AllianceBlock. All rights reserved.
-// See the file LICENSE for licensing terms.
-
 package manager
 
 import (
@@ -8,6 +5,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
 	"sync"
 	"time"
 
@@ -18,18 +17,19 @@ import (
 	"github.com/ava-labs/hypersdk/codec"
 	"github.com/ava-labs/hypersdk/rpc"
 	"github.com/ava-labs/hypersdk/utils"
-	"github.com/nuklai/nuklai-faucet/config"
+	fconfig "github.com/nuklai/nuklai-faucet/config"
+	"github.com/nuklai/nuklai-faucet/database"
 	"github.com/nuklai/nuklaivm/actions"
 	"github.com/nuklai/nuklaivm/auth"
 	"github.com/nuklai/nuklaivm/challenge"
-	"github.com/nuklai/nuklaivm/consts"
+	nconsts "github.com/nuklai/nuklaivm/consts"
 	nrpc "github.com/nuklai/nuklaivm/rpc"
 	"go.uber.org/zap"
 )
 
 type Manager struct {
 	log    logging.Logger
-	config *config.Config
+	config *fconfig.Config
 
 	cli  *rpc.JSONRPCClient
 	ncli *nrpc.JSONRPCClient
@@ -43,9 +43,11 @@ type Manager struct {
 	difficulty   uint16
 	solutions    set.Set[ids.ID]
 	cancelFunc   context.CancelFunc
+
+	db *database.DB
 }
 
-func New(logger logging.Logger, config *config.Config) (*Manager, error) {
+func New(logger logging.Logger, config *fconfig.Config) (*Manager, error) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cli := rpc.NewJSONRPCClient(config.NuklaiRPC)
 	networkID, _, chainID, err := cli.Network(ctx)
@@ -53,8 +55,25 @@ func New(logger logging.Logger, config *config.Config) (*Manager, error) {
 		cancel()
 		return nil, err
 	}
+
 	ncli := nrpc.NewJSONRPCClient(config.NuklaiRPC, networkID, chainID)
-	m := &Manager{log: logger, config: config, cli: cli, ncli: ncli, factory: auth.NewED25519Factory(config.PrivateKey()), cancelFunc: cancel}
+
+	// Set default values to the current directory
+	defaultDir, err := os.Getwd()
+	if err != nil {
+		panic("Failed to get current working directory: " + err.Error())
+	}
+	databaseFolder := fconfig.GetEnv("NUKLAI_FAUCET_DB_PATH", filepath.Join(defaultDir, ".nuklai-faucet/db"))
+	if err := os.MkdirAll(databaseFolder, os.ModePerm); err != nil {
+		panic("failed to create database directory: " + err.Error())
+	}
+	dbPath := filepath.Join(databaseFolder, "faucet.db")
+
+	db, err := database.NewDB(dbPath)
+	if err != nil {
+		return nil, err
+	}
+	m := &Manager{log: logger, config: config, cli: cli, ncli: ncli, factory: auth.NewED25519Factory(config.PrivateKey()), cancelFunc: cancel, db: db}
 	m.lastRotation = time.Now().Unix()
 	m.difficulty = m.config.StartDifficulty
 	m.solutions = set.NewSet[ids.ID](m.config.SolutionsPerSalt)
@@ -69,7 +88,7 @@ func New(logger logging.Logger, config *config.Config) (*Manager, error) {
 	m.log.Info("faucet initialized",
 		zap.String("address", m.config.AddressBech32()),
 		zap.Uint16("difficulty", m.difficulty),
-		zap.String("balance", utils.FormatBalance(bal, consts.Decimals)),
+		zap.String("balance", utils.FormatBalance(bal, nconsts.Decimals)),
 	)
 	m.t = timer.NewTimer(m.updateDifficulty)
 	return m, nil
@@ -80,6 +99,7 @@ func (m *Manager) Run(ctx context.Context) error {
 	go m.t.Dispatch()
 	<-ctx.Done()
 	m.t.Stop()
+	m.db.Close()
 	return ctx.Err()
 }
 
@@ -134,7 +154,7 @@ func (m *Manager) sendFunds(ctx context.Context, destination codec.Address, amou
 		return ids.Empty, 0, err
 	}
 	if amount < maxFee {
-		m.log.Warn("abandoning airdrop because network fee is greater than amount", zap.String("maxFee", utils.FormatBalance(maxFee, consts.Decimals)))
+		m.log.Warn("abandoning airdrop because network fee is greater than amount", zap.String("maxFee", utils.FormatBalance(maxFee, nconsts.Decimals)))
 		return ids.Empty, 0, errors.New("network fee too high")
 	}
 	bal, err := m.ncli.Balance(ctx, m.config.AddressBech32(), ids.Empty)
@@ -143,10 +163,19 @@ func (m *Manager) sendFunds(ctx context.Context, destination codec.Address, amou
 	}
 	if bal < maxFee+amount {
 		// This is a "best guess" heuristic for balance as there may be txs in-flight.
-		m.log.Warn("faucet has insufficient funds", zap.String("balance", utils.FormatBalance(bal, consts.Decimals)))
+		m.log.Warn("faucet has insufficient funds", zap.String("balance", utils.FormatBalance(bal, nconsts.Decimals)))
 		return ids.Empty, 0, errors.New("insufficient balance")
 	}
-	return tx.ID(), maxFee, submit(ctx)
+
+	err = submit(ctx)
+	if err == nil {
+		destinationAddr, err := codec.AddressBech32(nconsts.HRP, destination)
+		if err != nil {
+			return ids.Empty, 0, err
+		}
+		_ = m.db.SaveTransaction(tx.ID().String(), destinationAddr, amount)
+	}
+	return tx.ID(), maxFee, err
 }
 
 func (m *Manager) SolveChallenge(ctx context.Context, solver codec.Address, salt []byte, solution []byte) (ids.ID, uint64, error) {
@@ -172,9 +201,9 @@ func (m *Manager) SolveChallenge(ctx context.Context, solver codec.Address, salt
 	}
 	m.log.Info("fauceted funds",
 		zap.Stringer("txID", txID),
-		zap.String("max fee", utils.FormatBalance(maxFee, consts.Decimals)),
-		zap.String("destination", codec.MustAddressBech32(consts.HRP, solver)),
-		zap.String("amount", utils.FormatBalance(m.config.Amount, consts.Decimals)),
+		zap.String("max fee", utils.FormatBalance(maxFee, nconsts.Decimals)),
+		zap.String("destination", codec.MustAddressBech32(nconsts.HRP, solver)),
+		zap.String("amount", utils.FormatBalance(m.config.Amount, nconsts.Decimals)),
 	)
 	m.solutions.Add(solutionID)
 
@@ -239,8 +268,13 @@ func (m *Manager) UpdateNuklaiRPC(ctx context.Context, newNuklaiRPCUrl string) e
 		zap.String("chain ID", chainID.String()),
 		zap.String("address", m.config.AddressBech32()),
 		zap.Uint16("difficulty", m.difficulty),
-		zap.String("balance", utils.FormatBalance(bal, consts.Decimals)),
+		zap.String("balance", utils.FormatBalance(bal, nconsts.Decimals)),
 	)
 
 	return nil
+}
+
+// Config returns the configuration of the manager
+func (m *Manager) Config() *fconfig.Config {
+	return m.config
 }

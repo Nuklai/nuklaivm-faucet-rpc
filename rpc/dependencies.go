@@ -8,6 +8,7 @@ import (
 
 	"github.com/ava-labs/avalanchego/ids"
 	"github.com/ava-labs/hypersdk/codec"
+	"github.com/nuklai/nuklai-faucet/config"
 )
 
 type Manager interface {
@@ -15,4 +16,5 @@ type Manager interface {
 	GetChallenge(context.Context) ([]byte, uint16, error)
 	SolveChallenge(context.Context, codec.Address, []byte, []byte) (ids.ID, uint64, error)
 	UpdateNuklaiRPC(context.Context, string) error
+	Config() *config.Config
 }
