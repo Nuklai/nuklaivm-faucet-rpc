@@ -19,17 +19,23 @@
 
   You can use the scripts/db.sh script to interact with the SQLite database.
 
-  - Get Transactions by TxID:
+- Get All Transactions:
 
-    ```bash
-    ./scripts/db.sh get-transaction-by-txid <TxID>
-    ```
+  ```bash
+  ./scripts/db.sh get-all-transactions
+  ```
 
-  - Get All Transactions:
+- Get Transactions by TxID:
 
-    ```bash
-    ./scripts/db.sh get-all-transactions
-    ```
+  ```bash
+  ./scripts/db.sh get-transaction-by-txid <TxID>
+  ```
+
+- Get Transactions by user:
+
+  ```bash
+  ./scripts/db.sh get-transactions-by-user <WalletAddress>
+  ```
 
 ## Build & Run with Docker
 
