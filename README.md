@@ -48,12 +48,11 @@
 - Run
 
   ```bash
-  docker container rm -f nuklai-faucet;
-  docker run --env-file .env -d -p 10591:10591 --name nuklai-faucet nuklai-faucet
+  ./scripts/run_docker.sh
   ```
 
-- Read the logs
+- Stop the docker container
 
   ```bash
-  docker container logs -f nuklai-faucet
+  docker container stop nuklai-faucet
   ```

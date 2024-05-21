@@ -14,4 +14,4 @@ RUN go build -o faucet
 EXPOSE 10591
 
 # Command to run the application
-CMD ["./faucet", "./config.json"]
+CMD ["./faucet"]
