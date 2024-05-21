@@ -15,8 +15,14 @@ function get_all_transactions() {
   sqlite3 $DB_PATH "SELECT * FROM transactions;"
 }
 
+function get_transactions_by_user() {
+  local user_address="$1"
+  echo "Getting transactions for user: $user_address"
+  sqlite3 $DB_PATH "SELECT * FROM transactions WHERE destination='$user_address';"
+}
+
 function usage() {
-  echo "Usage: $0 {get-transaction-by-txid|get-all-transactions} [args]"
+  echo "Usage: $0 {get-transaction-by-txid|get-all-transactions|get-transactions-by-user} [args]"
 }
 
 # Ensure at least one argument is provided
@@ -36,6 +42,14 @@ case "$1" in
     ;;
   get-all-transactions)
     get_all_transactions
+    ;;
+  get-transactions-by-user)
+    if [ -z "$2" ]; then
+      echo "User address is required"
+      usage
+      exit 1
+    fi
+    get_transactions_by_user "$2"
     ;;
   *)
     usage
