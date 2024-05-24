@@ -71,6 +71,7 @@ func New(logger logging.Logger, config *fconfig.Config) (*Manager, error) {
 
 	db, err := database.NewDB(dbPath)
 	if err != nil {
+		cancel()
 		return nil, err
 	}
 	m := &Manager{log: logger, config: config, cli: cli, ncli: ncli, factory: auth.NewED25519Factory(config.PrivateKey()), cancelFunc: cancel, db: db}
@@ -95,11 +96,13 @@ func New(logger logging.Logger, config *fconfig.Config) (*Manager, error) {
 }
 
 func (m *Manager) Run(ctx context.Context) error {
+	m.log.Info("Manager run started")
 	m.t.SetTimeoutIn(time.Duration(m.config.TargetDurationPerSalt) * time.Second)
 	go m.t.Dispatch()
 	<-ctx.Done()
 	m.t.Stop()
 	m.db.Close()
+	m.log.Info("Manager run completed", zap.Error(ctx.Err()))
 	return ctx.Err()
 }
 
@@ -107,17 +110,14 @@ func (m *Manager) updateDifficulty() {
 	m.l.Lock()
 	defer m.l.Unlock()
 
-	// If time since [lastRotation] is within half of the target duration,
-	// we attempted to update difficulty when we just reset during block processing.
 	now := time.Now().Unix()
 	if now-m.lastRotation < m.config.TargetDurationPerSalt/2 {
 		return
 	}
 
-	// Decrease difficulty if there are no solutions in this period
 	if m.difficulty > m.config.StartDifficulty && m.solutions.Len() == 0 {
 		m.difficulty--
-		m.log.Info("decreasing faucet difficulty", zap.Uint16("new difficulty", m.difficulty))
+		m.log.Info("Decreasing faucet difficulty", zap.Uint16("new difficulty", m.difficulty))
 	}
 	m.lastRotation = time.Now().Unix()
 	salt, err := challenge.New()
@@ -127,6 +127,7 @@ func (m *Manager) updateDifficulty() {
 	m.salt = salt
 	m.solutions.Clear()
 	m.t.SetTimeoutIn(time.Duration(m.config.TargetDurationPerSalt) * time.Second)
+	m.log.Info("Difficulty updated", zap.Int64("lastRotation", m.lastRotation), zap.Uint16("difficulty", m.difficulty))
 }
 
 func (m *Manager) GetFaucetAddress(_ context.Context) (codec.Address, error) {
@@ -143,6 +144,7 @@ func (m *Manager) GetChallenge(_ context.Context) ([]byte, uint16, error) {
 func (m *Manager) sendFunds(ctx context.Context, destination codec.Address, amount uint64) (ids.ID, uint64, error) {
 	parser, err := m.ncli.Parser(ctx)
 	if err != nil {
+		m.log.Error("Failed to create parser", zap.Error(err))
 		return ids.Empty, 0, err
 	}
 	submit, tx, maxFee, err := m.cli.GenerateTransaction(ctx, parser, nil, &actions.Transfer{
@@ -151,19 +153,20 @@ func (m *Manager) sendFunds(ctx context.Context, destination codec.Address, amou
 		Value: amount,
 	}, m.factory)
 	if err != nil {
+		m.log.Error("Failed to generate transaction", zap.Error(err))
 		return ids.Empty, 0, err
 	}
 	if amount < maxFee {
-		m.log.Warn("abandoning airdrop because network fee is greater than amount", zap.String("maxFee", utils.FormatBalance(maxFee, nconsts.Decimals)))
+		m.log.Warn("Abandoning airdrop because network fee is greater than amount", zap.String("maxFee", utils.FormatBalance(maxFee, nconsts.Decimals)))
 		return ids.Empty, 0, errors.New("network fee too high")
 	}
 	bal, err := m.ncli.Balance(ctx, m.config.AddressBech32(), ids.Empty)
 	if err != nil {
+		m.log.Error("Failed to fetch balance", zap.Error(err))
 		return ids.Empty, 0, err
 	}
 	if bal < maxFee+amount {
-		// This is a "best guess" heuristic for balance as there may be txs in-flight.
-		m.log.Warn("faucet has insufficient funds", zap.String("balance", utils.FormatBalance(bal, nconsts.Decimals)))
+		m.log.Warn("Faucet has insufficient funds", zap.String("balance", utils.FormatBalance(bal, nconsts.Decimals)))
 		return ids.Empty, 0, errors.New("insufficient balance")
 	}
 
@@ -171,9 +174,11 @@ func (m *Manager) sendFunds(ctx context.Context, destination codec.Address, amou
 	if err == nil {
 		destinationAddr, err := codec.AddressBech32(nconsts.HRP, destination)
 		if err != nil {
+			m.log.Error("Failed to convert address to bech32", zap.Error(err))
 			return ids.Empty, 0, err
 		}
 		_ = m.db.SaveTransaction(tx.ID().String(), destinationAddr, amount)
+		m.log.Info("Transaction saved", zap.String("txID", tx.ID().String()), zap.String("destination", destinationAddr), zap.Uint64("amount", amount))
 	}
 	return tx.ID(), maxFee, err
 }
@@ -182,24 +187,26 @@ func (m *Manager) SolveChallenge(ctx context.Context, solver codec.Address, salt
 	m.l.Lock()
 	defer m.l.Unlock()
 
-	// Ensure solution is valid
 	if !bytes.Equal(m.salt, salt) {
+		m.log.Warn("Salt expired")
 		return ids.Empty, 0, errors.New("salt expired")
 	}
 	if !challenge.Verify(salt, solution, m.difficulty) {
+		m.log.Warn("Invalid solution")
 		return ids.Empty, 0, errors.New("invalid solution")
 	}
 	solutionID := utils.ToID(solution)
 	if m.solutions.Contains(solutionID) {
+		m.log.Warn("Duplicate solution")
 		return ids.Empty, 0, errors.New("duplicate solution")
 	}
 
-	// Issue transaction
 	txID, maxFee, err := m.sendFunds(ctx, solver, m.config.Amount)
 	if err != nil {
+		m.log.Error("Failed to send funds", zap.Error(err))
 		return ids.Empty, 0, err
 	}
-	m.log.Info("fauceted funds",
+	m.log.Info("Fauceted funds",
 		zap.Stringer("txID", txID),
 		zap.String("max fee", utils.FormatBalance(maxFee, nconsts.Decimals)),
 		zap.String("destination", codec.MustAddressBech32(nconsts.HRP, solver)),
@@ -207,19 +214,19 @@ func (m *Manager) SolveChallenge(ctx context.Context, solver codec.Address, salt
 	)
 	m.solutions.Add(solutionID)
 
-	// Roll salt if hit expected solutions
 	if m.solutions.Len() >= m.config.SolutionsPerSalt {
 		m.difficulty++
-		m.log.Info("increasing faucet difficulty", zap.Uint16("new difficulty", m.difficulty))
+		m.log.Info("Increasing faucet difficulty", zap.Uint16("new difficulty", m.difficulty))
 		m.lastRotation = time.Now().Unix()
 		m.salt, err = challenge.New()
 		if err != nil {
-			// Should never happen
+			m.log.Error("Failed to generate new salt", zap.Error(err))
 			return ids.Empty, 0, err
 		}
 		m.solutions.Clear()
 		m.t.Cancel()
 		m.t.SetTimeoutIn(time.Duration(m.config.TargetDurationPerSalt) * time.Second)
+		m.log.Info("Salt and difficulty updated due to hitting expected solutions", zap.Uint16("new difficulty", m.difficulty))
 	}
 	return txID, m.config.Amount, nil
 }
@@ -230,23 +237,19 @@ func (m *Manager) UpdateNuklaiRPC(ctx context.Context, newNuklaiRPCUrl string) e
 
 	m.log.Info("Updating nuklaiRPC URL", zap.String("old URL", m.config.NuklaiRPC), zap.String("new URL", newNuklaiRPCUrl))
 
-	// Updating the configuration
 	m.config.NuklaiRPC = newNuklaiRPCUrl
 
-	// Re-initializing the RPC clients
 	cli := rpc.NewJSONRPCClient(newNuklaiRPCUrl)
 	networkID, _, chainID, err := cli.Network(ctx)
-	m.log.Info("Fetching network details", zap.Uint32("network ID", networkID), zap.String("chain ID", chainID.String()))
 	if err != nil {
 		m.log.Error("Failed to fetch network details", zap.Error(err))
 		return fmt.Errorf("failed to fetch network details: %w", err)
 	}
+	m.log.Info("Fetched network details", zap.Uint32("network ID", networkID), zap.String("chain ID", chainID.String()))
 
-	// Reassign the newly created clients
 	m.cli = cli
 	m.ncli = nrpc.NewJSONRPCClient(newNuklaiRPCUrl, networkID, chainID)
 
-	// Reinitialize dependent properties
 	m.salt, err = challenge.New()
 	if err != nil {
 		m.log.Error("Failed to generate new salt", zap.Error(err))

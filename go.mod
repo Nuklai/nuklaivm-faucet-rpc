@@ -9,7 +9,7 @@ require (
 	github.com/ava-labs/hypersdk v0.0.16
 	github.com/joho/godotenv v1.5.1
 	github.com/mattn/go-sqlite3 v1.14.22
-	github.com/nuklai/nuklaivm v0.0.0-20240516160951-8175619b24ec
+	github.com/nuklai/nuklaivm v0.0.0-20240515164422-45dab75a00c9
 	go.uber.org/zap v1.27.0
 )
 
