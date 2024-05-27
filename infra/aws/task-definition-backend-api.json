@@ -1,0 +1,52 @@
+{
+  "cpu": "256",
+  "memory": "2048",
+  "volumes": [],
+  "networkMode": "awsvpc",
+  "family": "${PRODUCT}-${COMPONENT}-${APPLICATION}-${ENV}",
+  "requiresCompatibilities": ["FARGATE"],
+  "placementConstraints": [],
+  "executionRoleArn": "arn:aws:iam::${AWS_ACCOUNT_ID}:role/${PRODUCT}-${COMPONENT}-${APPLICATION}-ecs-taskexec-${AWS_REGION}-${ENV}",
+  "taskRoleArn": "arn:aws:iam::${AWS_ACCOUNT_ID}:role/${PRODUCT}-${COMPONENT}-${APPLICATION}-ecs-task-${AWS_REGION}-${ENV}",
+  "containerDefinitions": [
+    {
+      "name": "${APPLICATION}",
+      "cpu": 512,
+      "memory": 4096,
+      "linuxParameters": {
+        "initProcessEnabled": true
+      },
+      "essential": true,
+      "volumesFrom": [],
+      "mountPoints": [],
+      "image": "",
+      "portMappings": [
+        {
+          "protocol": "tcp",
+          "containerPort": "${API_PORT}",
+          "hostPort": "${API_PORT}"
+        }
+      ],
+      "environment": [
+        {
+          "name": "AWS_REGION",
+          "value": "${AWS_REGION}"
+        },
+        {
+          "name": "ENV",
+          "value": "${ENV}"
+        }
+      ],
+      "secrets": [
+      ],
+      "logConfiguration": {
+        "logDriver": "awslogs",
+        "options": {
+          "awslogs-group": "/fargate/service/${PRODUCT}-${APPLICATION}-${ENVIRONMENT}",
+          "awslogs-region": "${AWS_REGION}",
+          "awslogs-stream-prefix": "ecs"
+        }
+      }
+    }
+  ]
+}

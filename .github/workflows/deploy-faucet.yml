@@ -1,0 +1,94 @@
+name: Faucetdeployment
+
+on:
+  push:
+    branches:
+      - master
+      - staging
+      - qa
+      - demo
+      - prod
+
+permissions:
+  id-token: write
+  contents: read
+
+env:
+  PRODUCT: nuklaivm
+  COMPONENT: backend
+  APPLICATION: faucet
+  API_PORT: 10591
+  AWS_REGION: eu-west-1
+  BUILD_FOLDER: build
+
+
+jobs:
+  build_and_deploy:
+    runs-on: ubuntu-latest
+    environment: ${{ github.ref == 'refs/heads/prod' && 'prod' || github.ref == 'refs/heads/dev' && 'dev' || 'dev' }}
+
+    steps:
+    - uses: actions/checkout@v4
+    - uses: actions/setup-node@v4
+      with:
+        node-version: '21.6'
+
+    - name: Set dev ENV
+      if: github.ref == 'refs/heads/master'
+      run: |
+        echo "ENV=dev" >> $GITHUB_ENV
+        echo "AWS_ACCOUNT_ID=722484512985" >> $GITHUB_ENV
+
+    - name: Set prod ENV
+      if: github.ref == 'refs/heads/prod'
+      run: |
+        echo "ENV=prod" >> $GITHUB_ENV
+        echo "AWS_ACCOUNT_ID=146563424647" >> $GITHUB_ENV
+
+
+    - name: Upgrade deployment files with environment information
+      uses: cschleiden/replace-tokens@v1
+      with:
+        tokenPrefix: '${'
+        tokenSuffix: '}'
+        files: '["infra/aws/*.json"]'
+      env:
+        AWS_ACCOUNT_ID: ${{ env.AWS_ACCOUNT_ID }}
+        AWS_REGION: ${{ env.AWS_REGION }}
+
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        role-to-assume: arn:aws:iam::${{ env.AWS_ACCOUNT_ID }}:role/${{ env.PRODUCT }}-${{ env.COMPONENT }}-deployer-${{ env.AWS_REGION }}-${{ env.ENV }}
+        aws-region: ${{ env.AWS_REGION }}
+
+    - name: Login to Amazon ECR
+      id: login-ecr
+      uses: aws-actions/amazon-ecr-login@v2
+
+    - name: Build, tag, and push image to Amazon ECR
+      id: build-image
+      env:
+        ECR_REGISTRY: ${{ env.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com
+        ECR_REPOSITORY: ${{ env.PRODUCT }}-${{ env.COMPONENT }}-${{ env.APPLICATION }}-${{ env.ENV }}
+        IMAGE_TAG: ${{ github.sha }}
+      run: |
+        docker build -f Dockerfile -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
+        docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+        echo "image=$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG" >> $GITHUB_OUTPUT
+
+    - name: Fill in the new image ID in the Amazon ECS task definition
+      id: task-def
+      uses: aws-actions/amazon-ecs-render-task-definition@v1
+      with:
+        task-definition: infra/aws/task-definition-${{ env.COMPONENT }}-${{ env.APPLICATION }}.json
+        container-name: ${{ env.APPLICATION }}
+        image: ${{ steps.build-image.outputs.image }}
+
+    - name: Deploy Amazon ECS task definition
+      uses: aws-actions/amazon-ecs-deploy-task-definition@v1
+      with:
+        task-definition: ${{ steps.task-def.outputs.task-definition }}
+        service: ${{ env.APPLICATION }}
+        cluster: ${{ env.PRODUCT }}-${{ env.COMPONENT }}-${{ env.ENV }}
+        wait-for-service-stability: true
