@@ -1,12 +1,9 @@
-name: Faucetdeployment
+name: Faucet deployment
 
 on:
   push:
     branches:
-      - master
-      - staging
-      - qa
-      - demo
+      - dev
       - prod
 
 permissions:
