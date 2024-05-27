@@ -42,7 +42,7 @@
       "logConfiguration": {
         "logDriver": "awslogs",
         "options": {
-          "awslogs-group": "/fargate/service/${PRODUCT}-${APPLICATION}-${ENVIRONMENT}",
+          "awslogs-group": "/fargate/service/${PRODUCT}-${COMPONENT}-${APPLICATION}-${ENV}",
           "awslogs-region": "${AWS_REGION}",
           "awslogs-stream-prefix": "ecs"
         }
