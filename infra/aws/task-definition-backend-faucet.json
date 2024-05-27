@@ -38,6 +38,18 @@
         }
       ],
       "secrets": [
+        {
+          "name": "NUKLAI_RPC",
+          "valueFrom": "arn:aws:ssm:${AWS_REGION}:${AWS_ACCOUNT_ID}:parameter/${ENV}/${PRODUCT}/${COMPONENT}/service_url"
+        },
+        {
+          "name": "PRIVATE_KEY_BYTES",
+          "valueFrom": "arn:aws:ssm:${AWS_REGION}:${AWS_ACCOUNT_ID}:parameter/${ENV}/${PRODUCT}/${COMPONENT}/faucet/private_key_bytes"
+        },
+        {
+          "name": "ADMIN_TOKEN",
+          "valueFrom": "arn:aws:ssm:${AWS_REGION}:${AWS_ACCOUNT_ID}:parameter/${ENV}/${PRODUCT}/${COMPONENT}/faucet/admin_token"
+        }
       ],
       "logConfiguration": {
         "logDriver": "awslogs",
