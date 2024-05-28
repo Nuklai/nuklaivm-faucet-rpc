@@ -11,8 +11,8 @@
   "containerDefinitions": [
     {
       "name": "${APPLICATION}",
-      "cpu": 512,
-      "memory": 4096,
+      "cpu": 256,
+      "memory": 2048,
       "linuxParameters": {
         "initProcessEnabled": true
       },
@@ -38,11 +38,23 @@
         }
       ],
       "secrets": [
+        {
+          "name": "NUKLAI_RPC",
+          "valueFrom": "arn:aws:ssm:${AWS_REGION}:${AWS_ACCOUNT_ID}:parameter/${ENV}/${PRODUCT}/${COMPONENT}/rpc_node_url_nuklai"
+        },
+        {
+          "name": "PRIVATE_KEY_BYTES",
+          "valueFrom": "arn:aws:ssm:${AWS_REGION}:${AWS_ACCOUNT_ID}:parameter/${ENV}/${PRODUCT}/${COMPONENT}/faucet/private_key_bytes"
+        },
+        {
+          "name": "ADMIN_TOKEN",
+          "valueFrom": "arn:aws:ssm:${AWS_REGION}:${AWS_ACCOUNT_ID}:parameter/${ENV}/${PRODUCT}/${COMPONENT}/faucet/admin_token"
+        }
       ],
       "logConfiguration": {
         "logDriver": "awslogs",
         "options": {
-          "awslogs-group": "/fargate/service/${PRODUCT}-${APPLICATION}-${ENVIRONMENT}",
+          "awslogs-group": "/fargate/service/${PRODUCT}-${COMPONENT}-${APPLICATION}-${ENV}",
           "awslogs-region": "${AWS_REGION}",
           "awslogs-stream-prefix": "ecs"
         }
