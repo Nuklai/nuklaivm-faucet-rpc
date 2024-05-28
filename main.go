@@ -23,10 +23,7 @@ import (
 )
 
 var (
-	allowedOrigins  = []string{"*"}
-	allowedHosts    = []string{"*"}
-	shutdownTimeout = 30 * time.Second
-	httpConfig      = server.HTTPConfig{
+	httpConfig = server.HTTPConfig{
 		ReadTimeout:       30 * time.Second,
 		ReadHeaderTimeout: 30 * time.Second,
 		WriteTimeout:      30 * time.Second,
@@ -78,6 +75,7 @@ func main() {
 			fatal(log, "cannot generate private key", zap.Error(err))
 		}
 		config.PrivateKeyBytes = priv[:]
+		fatal(log, "private key should be set in .env file after generation")
 	}
 	log.Info("Private key generated")
 
@@ -123,7 +121,7 @@ func main() {
 	if err != nil {
 		fatal(log, "cannot create handler", zap.Error(err))
 	}
-	mux.Handle("/faucet", handler)
+	mux.Handle("/", handler)
 	log.Info("Faucet handler added")
 
 	// Start server
