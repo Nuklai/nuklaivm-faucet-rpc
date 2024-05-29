@@ -25,7 +25,7 @@ function start_postgres() {
   echo "Starting PostgreSQL container..."
 
   # Remove any existing data volume to ensure clean initialization
-  docker volume rm postgres_data || true
+  docker volume rm postgres_data_faucet || true
 
   # Run the PostgreSQL container with the constructed --env options
   docker run -d --name nuklai-faucet-postgres --network nuklai-faucet-network \
@@ -33,7 +33,7 @@ function start_postgres() {
       --env POSTGRES_PASSWORD=${POSTGRES_PASSWORD} \
       --env POSTGRES_DBNAME=${POSTGRES_DBNAME} \
       -p ${POSTGRES_PORT:-5432}:5432 \
-      -v postgres_data:/var/lib/postgresql/data \
+      -v postgres_data_faucet:/var/lib/postgresql/data \
       -v $(pwd)/docker-entrypoint-initdb.d:/docker-entrypoint-initdb.d \
       postgres:13
 
