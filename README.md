@@ -15,6 +15,8 @@
   ./build/nuklai-faucet
   ```
 
+  NOTE: Make sure to have the correct values for Postgres on your .env file
+
 - Database Operations
 
   You can use the scripts/db.sh script to interact with the SQLite database.
@@ -42,17 +44,23 @@
 - Build
 
   ```bash
-  docker build -t nuklai-faucet .
+  ./scripts/build.sh docker
   ```
 
 - Run
 
   ```bash
-  ./scripts/run_docker.sh
+  ./scripts/run_docker.sh start
   ```
 
-- Stop the docker container
+- Stop the docker containers
 
   ```bash
-  docker container stop nuklai-faucet
+  ./scripts/run_docker.sh stop
+  ```
+
+  - Check the logs from docker containers
+
+  ```bash
+  ./scripts/run_docker.sh logs
   ```
