@@ -2,24 +2,29 @@
 
 ## Build & Run from Source
 
-- Build
+To build the binary from the source, use the following command:
 
-  ```bash
-  ./scripts/build.sh
-  ```
+```bash
+./scripts/build.sh
+```
 
-- Run
+Before running, copy the example environment file to .env and configure it with the correct values:
 
-  ```bash
-  cp .env.example .env;
-  ./build/nuklai-faucet
-  ```
+```bash
+cp .env.example .env;
+```
 
-  NOTE: Make sure to have the correct values for Postgres on your .env file
+Then, run the application:
 
-- Database Operations
+```bash
+./build/nuklai-faucet
+```
 
-  You can use the scripts/db.sh script to interact with the SQLite database.
+NOTE: Make sure to have the correct values for PostgreSQL in your .env file.
+
+### Database Operations
+
+You can use the scripts/db.sh script to interact with the SQLite database.
 
 - Get All Transactions:
 
@@ -41,26 +46,26 @@
 
 ## Build & Run with Docker
 
-- Build
+To build the Docker image, use the following command:
 
-  ```bash
-  ./scripts/build.sh docker
-  ```
+```bash
+./scripts/build.sh docker
+```
 
-- Run
+Start the Docker containers:
 
-  ```bash
-  ./scripts/run_docker.sh start
-  ```
+```bash
+./scripts/run_docker.sh start
+```
 
-- Stop the docker containers
+To stop the Docker containers:
 
-  ```bash
-  ./scripts/run_docker.sh stop
-  ```
+```bash
+./scripts/run_docker.sh stop
+```
 
-  - Check the logs from docker containers
+To view the logs of the Docker container:
 
-  ```bash
-  ./scripts/run_docker.sh logs
-  ```
+```bash
+./scripts/run_docker.sh logs
+```
