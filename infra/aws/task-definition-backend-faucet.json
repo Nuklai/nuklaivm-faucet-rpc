@@ -44,12 +44,32 @@
         },
         {
           "name": "PRIVATE_KEY_BYTES",
-          "valueFrom": "arn:aws:ssm:${AWS_REGION}:${AWS_ACCOUNT_ID}:parameter/${ENV}/${PRODUCT}/${COMPONENT}/faucet/private_key_bytes"
+          "valueFrom": "arn:aws:ssm:${AWS_REGION}:${AWS_ACCOUNT_ID}:parameter/${ENV}/${PRODUCT}/${COMPONENT}/${APPLICATION}/private_key_bytes"
         },
         {
           "name": "ADMIN_TOKEN",
-          "valueFrom": "arn:aws:ssm:${AWS_REGION}:${AWS_ACCOUNT_ID}:parameter/${ENV}/${PRODUCT}/${COMPONENT}/faucet/admin_token"
-        }
+          "valueFrom": "arn:aws:ssm:${AWS_REGION}:${AWS_ACCOUNT_ID}:parameter/${ENV}/${PRODUCT}/${COMPONENT}/${APPLICATION}/admin_token"
+        },
+        {
+          "name": "POSTGRES_HOST",
+          "valueFrom": "arn:aws:ssm:${AWS_REGION}:${AWS_ACCOUNT_ID}:parameter/${ENV}/${PRODUCT}/${COMPONENT}/${APPLICATION}/db_host"
+        },
+        {
+          "name": "POSTGRES_PORT",
+          "valueFrom": "arn:aws:ssm:${AWS_REGION}:${AWS_ACCOUNT_ID}:parameter/${ENV}/${PRODUCT}/${COMPONENT}/${APPLICATION}/private_key_bytes"
+        },
+        {
+          "name": "POSTGRES_USER",
+          "valueFrom": "arn:aws:ssm:${AWS_REGION}:${AWS_ACCOUNT_ID}:parameter/${ENV}/${PRODUCT}/${COMPONENT}/${APPLICATION}/admin_token"
+        },
+        {
+          "name": "POSTGRES_PASSWORD",
+          "valueFrom": "arn:aws:ssm:${AWS_REGION}:${AWS_ACCOUNT_ID}:parameter/${ENV}/${PRODUCT}/${COMPONENT}/${APPLICATION}/db_password"
+        },
+        {
+          "name": "POSTGRES_DBNAME",
+          "valueFrom": "arn:aws:ssm:${AWS_REGION}:${AWS_ACCOUNT_ID}:parameter/${ENV}/${PRODUCT}/${COMPONENT}/${APPLICATION}/db_name"
+        },
       ],
       "logConfiguration": {
         "logDriver": "awslogs",
