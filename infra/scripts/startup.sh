@@ -9,5 +9,6 @@ echo "POSTGRES_PORT="$POSTGRES_PORT"" >> ${APP_DIR}/.env
 echo "POSTGRES_USER="$POSTGRES_USER"" >> ${APP_DIR}/.env
 echo "POSTGRES_PASSWORD="$POSTGRES_PASSWORD"" >> ${APP_DIR}/.env
 echo "POSTGRES_DBNAME="$POSTGRES_DBNAME"" >> ${APP_DIR}/.env
+echo "POSTGRES_ENABLESSL="$POSTGRES_ENABLESSL"" >> ${APP_DIR}/.env
 
 echo "${@}" | xargs -I % sh -c '%'

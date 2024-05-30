@@ -31,6 +31,7 @@ type Config struct {
 	PostgresUser     string
 	PostgresPassword string
 	PostgresDBName   string
+	PostgresSSLMode  string
 }
 
 func (c *Config) PrivateKey() ed25519.PrivateKey {
@@ -88,6 +89,12 @@ func LoadConfigFromEnv() (*Config, error) {
 		return nil, err
 	}
 
+	postgresEnableSSL := GetEnv("POSTGRES_ENABLESSL", "false")
+	postgresSSLMode := "disable"
+	if parsed, err := strconv.ParseBool(postgresEnableSSL); err == nil && parsed {
+		postgresSSLMode = "require"
+	}
+
 	return &Config{
 		HTTPHost: GetEnv("HOST", ""),
 		HTTPPort: port,
@@ -107,5 +114,6 @@ func LoadConfigFromEnv() (*Config, error) {
 		PostgresUser:     GetEnv("POSTGRES_USER", "user"),
 		PostgresPassword: GetEnv("POSTGRES_PASSWORD", "password"),
 		PostgresDBName:   GetEnv("POSTGRES_DBNAME", "dbname"),
+		PostgresSSLMode:  postgresSSLMode,
 	}, nil
 }
