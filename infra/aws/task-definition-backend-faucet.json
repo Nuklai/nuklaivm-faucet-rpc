@@ -56,11 +56,11 @@
         },
         {
           "name": "POSTGRES_PORT",
-          "valueFrom": "arn:aws:ssm:${AWS_REGION}:${AWS_ACCOUNT_ID}:parameter/${ENV}/${PRODUCT}/${COMPONENT}/${APPLICATION}/private_key_bytes"
+          "valueFrom": "arn:aws:ssm:${AWS_REGION}:${AWS_ACCOUNT_ID}:parameter/${ENV}/${PRODUCT}/${COMPONENT}/${APPLICATION}/db_port"
         },
         {
           "name": "POSTGRES_USER",
-          "valueFrom": "arn:aws:ssm:${AWS_REGION}:${AWS_ACCOUNT_ID}:parameter/${ENV}/${PRODUCT}/${COMPONENT}/${APPLICATION}/admin_token"
+          "valueFrom": "arn:aws:ssm:${AWS_REGION}:${AWS_ACCOUNT_ID}:parameter/${ENV}/${PRODUCT}/${COMPONENT}/${APPLICATION}/db_username"
         },
         {
           "name": "POSTGRES_PASSWORD",
