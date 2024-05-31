@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"net"
 	"net/http"
@@ -15,6 +16,7 @@ import (
 	"github.com/ava-labs/hypersdk/server"
 	"github.com/ava-labs/hypersdk/utils"
 	"github.com/joho/godotenv"
+	_ "github.com/lib/pq"
 	"go.uber.org/zap"
 
 	"github.com/nuklai/nuklai-faucet/config"
@@ -99,6 +101,29 @@ func main() {
 	// Add health check handler
 	mux.HandleFunc("/health", HealthHandler)
 	log.Info("Health handler added")
+
+	// Retry mechanism for PostgreSQL connection
+	var db *sql.DB
+	for i := 0; i < 10; i++ {
+		db, err = sql.Open("postgres", fmt.Sprintf("host=%s port=%d user=%s password=%s dbname=%s sslmode=%s",
+			config.PostgresHost, config.PostgresPort, config.PostgresUser, config.PostgresPassword, config.PostgresDBName, config.PostgresSSLMode))
+		if err != nil {
+			log.Warn("Error opening database", zap.Error(err))
+			time.Sleep(5 * time.Second)
+			continue
+		}
+		err = db.Ping()
+		if err == nil {
+			break
+		}
+		log.Warn("Database not ready, retrying...", zap.Error(err))
+		time.Sleep(5 * time.Second)
+	}
+
+	if err != nil {
+		fatal(log, "could not connect to the database", zap.Error(err))
+	}
+	log.Info("Database connection established")
 
 	// Start manager with context handling
 	manager, err := manager.New(log, config)

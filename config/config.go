@@ -24,6 +24,14 @@ type Config struct {
 	TargetDurationPerSalt int64 // seconds
 
 	AdminToken string
+
+	// PostgreSQL configuration
+	PostgresHost     string
+	PostgresPort     int
+	PostgresUser     string
+	PostgresPassword string
+	PostgresDBName   string
+	PostgresSSLMode  string
 }
 
 func (c *Config) PrivateKey() ed25519.PrivateKey {
@@ -76,6 +84,17 @@ func LoadConfigFromEnv() (*Config, error) {
 		return nil, err
 	}
 
+	postgresPort, err := strconv.Atoi(GetEnv("POSTGRES_PORT", "5432"))
+	if err != nil {
+		return nil, err
+	}
+
+	postgresEnableSSL := GetEnv("POSTGRES_ENABLESSL", "false")
+	postgresSSLMode := "disable"
+	if parsed, err := strconv.ParseBool(postgresEnableSSL); err == nil && parsed {
+		postgresSSLMode = "require"
+	}
+
 	return &Config{
 		HTTPHost: GetEnv("HOST", ""),
 		HTTPPort: port,
@@ -89,5 +108,12 @@ func LoadConfigFromEnv() (*Config, error) {
 		TargetDurationPerSalt: targetDurationPerSalt,
 
 		AdminToken: GetEnv("ADMIN_TOKEN", "ADMIN_TOKEN"),
+
+		PostgresHost:     GetEnv("POSTGRES_HOST", "localhost"),
+		PostgresPort:     postgresPort,
+		PostgresUser:     GetEnv("POSTGRES_USER", "user"),
+		PostgresPassword: GetEnv("POSTGRES_PASSWORD", "password"),
+		PostgresDBName:   GetEnv("POSTGRES_DBNAME", "dbname"),
+		PostgresSSLMode:  postgresSSLMode,
 	}, nil
 }

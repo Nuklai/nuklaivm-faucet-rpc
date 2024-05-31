@@ -11,7 +11,6 @@ COPY . .
 RUN go build -o faucet
 
 # Create .env file
-
 RUN chmod +x ./infra/scripts/startup.sh
 ENTRYPOINT [ "./infra/scripts/startup.sh" ]
 

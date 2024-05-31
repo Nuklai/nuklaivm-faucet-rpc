@@ -3,9 +3,11 @@ package database
 import (
 	"database/sql"
 	"log"
+	"strconv"
 	"time"
 
-	_ "github.com/mattn/go-sqlite3"
+	_ "github.com/lib/pq"
+	"github.com/nuklai/nuklai-faucet/config"
 )
 
 type DB struct {
@@ -19,20 +21,25 @@ type Transaction struct {
 	Timestamp   int64  `json:"timestamp"`
 }
 
-func NewDB(path string) (*DB, error) {
-	log.Printf("Opening database at path: %s", path)
-	db, err := sql.Open("sqlite3", path)
+func NewDB(config *config.Config) (*DB, error) {
+	connStr := "host=" + config.PostgresHost +
+		" port=" + strconv.Itoa(config.PostgresPort) +
+		" user=" + config.PostgresUser +
+		" password=" + config.PostgresPassword +
+		" dbname=" + config.PostgresDBName +
+		" sslmode=disable"
+	db, err := sql.Open("postgres", connStr)
 	if err != nil {
 		log.Printf("Error opening database: %v", err)
 		return nil, err
 	}
 
 	query := `CREATE TABLE IF NOT EXISTS transactions (
-		txid TEXT PRIMARY KEY,
-		destination TEXT,
-		amount INTEGER,
-		timestamp INTEGER
-	)`
+        txid TEXT PRIMARY KEY,
+        destination TEXT,
+        amount BIGINT,
+        timestamp BIGINT
+    )`
 	_, err = db.Exec(query)
 	if err != nil {
 		log.Printf("Error creating table: %v", err)
@@ -46,7 +53,7 @@ func NewDB(path string) (*DB, error) {
 func (db *DB) SaveTransaction(txID, destination string, amount uint64) error {
 	timestamp := time.Now().Unix()
 	log.Printf("Saving transaction: txID=%s, destination=%s, amount=%d, timestamp=%d", txID, destination, amount, timestamp)
-	query := `INSERT INTO transactions (txid, destination, amount, timestamp) VALUES (?, ?, ?, ?)`
+	query := `INSERT INTO transactions (txid, destination, amount, timestamp) VALUES ($1, $2, $3, $4)`
 	_, err := db.conn.Exec(query, txID, destination, amount, timestamp)
 	if err != nil {
 		log.Printf("Error saving transaction: %v", err)
@@ -56,7 +63,7 @@ func (db *DB) SaveTransaction(txID, destination string, amount uint64) error {
 
 func (db *DB) GetTransaction(txID string) (*Transaction, error) {
 	var txn Transaction
-	query := `SELECT txid, destination, amount, timestamp FROM transactions WHERE txid = ?`
+	query := `SELECT txid, destination, amount, timestamp FROM transactions WHERE txid = $1`
 	row := db.conn.QueryRow(query, txID)
 	err := row.Scan(&txn.TxID, &txn.Destination, &txn.Amount, &txn.Timestamp)
 	if err != nil {

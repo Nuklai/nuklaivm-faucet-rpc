@@ -5,8 +5,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os"
-	"path/filepath"
 	"sync"
 	"time"
 
@@ -58,18 +56,7 @@ func New(logger logging.Logger, config *fconfig.Config) (*Manager, error) {
 
 	ncli := nrpc.NewJSONRPCClient(config.NuklaiRPC, networkID, chainID)
 
-	// Set default values to the current directory
-	defaultDir, err := os.Getwd()
-	if err != nil {
-		panic("Failed to get current working directory: " + err.Error())
-	}
-	databaseFolder := fconfig.GetEnv("NUKLAI_FAUCET_DB_PATH", filepath.Join(defaultDir, ".nuklai-faucet/db"))
-	if err := os.MkdirAll(databaseFolder, os.ModePerm); err != nil {
-		panic("failed to create database directory: " + err.Error())
-	}
-	dbPath := filepath.Join(databaseFolder, "faucet.db")
-
-	db, err := database.NewDB(dbPath)
+	db, err := database.NewDB(config)
 	if err != nil {
 		cancel()
 		return nil, err
