@@ -224,8 +224,8 @@ github.com/nbutton23/zxcvbn-go v0.0.0-20180912185939-ae427f1e4c1d h1:AREM5mwr4u1
 github.com/nbutton23/zxcvbn-go v0.0.0-20180912185939-ae427f1e4c1d/go.mod h1:o96djdrsSGy3AWPyBgZMAGfxZNfgntdJG+11KU4QvbU=
 github.com/neilotoole/errgroup v0.1.6 h1:PODGqPXdT5BC/zCYIMoTrwV+ujKcW+gBXM6Ye9Ve3R8=
 github.com/neilotoole/errgroup v0.1.6/go.mod h1:Q2nLGf+594h0CLBs/Mbg6qOr7GtqDK7C2S41udRnToE=
-github.com/nuklai/nuklaivm v0.0.0-20240515164422-45dab75a00c9 h1:kg40/FDTwBn4PL9miaX+nxIeogUFKV3sLWhy1DpAGmU=
-github.com/nuklai/nuklaivm v0.0.0-20240515164422-45dab75a00c9/go.mod h1:9Hwt1LstSE5ohB/0n1ScMHlHonmcX3qOUJGupWta4TU=
+github.com/nuklai/nuklaivm v0.1.0 h1:LebrWGF0q+PnC+qh+6EjQwL3Emd4FLck1n80UM9I/t0=
+github.com/nuklai/nuklaivm v0.1.0/go.mod h1:4G5jEf00JXNRkDQNr5v6oLA2QFfHvsnfDJVLV5cD9rs=
 github.com/nxadm/tail v1.4.4/go.mod h1:kenIhsEOeOJmVchQTgglprH7qJGnHDVpk1VPCcaMI8A=
 github.com/oasisprotocol/curve25519-voi v0.0.0-20230110094441-db37f07504ce h1:/pEpMk55wH0X+E5zedGEMOdLuWmV8P4+4W3+LZaM6kg=
 github.com/oasisprotocol/curve25519-voi v0.0.0-20230110094441-db37f07504ce/go.mod h1:hVoHR2EVESiICEMbg137etN/Lx+lSrHPTD39Z/uE+2s=
