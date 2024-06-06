@@ -12,6 +12,7 @@ import (
 	"github.com/ava-labs/avalanchego/utils/logging"
 	"github.com/ava-labs/avalanchego/utils/set"
 	"github.com/ava-labs/avalanchego/utils/timer"
+	"github.com/ava-labs/hypersdk/chain"
 	"github.com/ava-labs/hypersdk/codec"
 	"github.com/ava-labs/hypersdk/rpc"
 	"github.com/ava-labs/hypersdk/utils"
@@ -134,11 +135,11 @@ func (m *Manager) sendFunds(ctx context.Context, destination codec.Address, amou
 		m.log.Error("Failed to create parser", zap.Error(err))
 		return ids.Empty, 0, err
 	}
-	submit, tx, maxFee, err := m.cli.GenerateTransaction(ctx, parser, nil, &actions.Transfer{
+	submit, tx, maxFee, err := m.cli.GenerateTransaction(ctx, parser, []chain.Action{&actions.Transfer{
 		To:    destination,
 		Asset: ids.Empty,
 		Value: amount,
-	}, m.factory)
+	}}, m.factory)
 	if err != nil {
 		m.log.Error("Failed to generate transaction", zap.Error(err))
 		return ids.Empty, 0, err
