@@ -115,7 +115,6 @@ func (m *Manager) updateDifficulty() {
 	m.salt = salt
 	m.solutions.Clear()
 	m.t.SetTimeoutIn(time.Duration(m.config.TargetDurationPerSalt) * time.Second)
-	m.log.Info("Difficulty updated", zap.Int64("lastRotation", m.lastRotation), zap.Uint16("difficulty", m.difficulty))
 }
 
 func (m *Manager) GetFaucetAddress(_ context.Context) (codec.Address, error) {
