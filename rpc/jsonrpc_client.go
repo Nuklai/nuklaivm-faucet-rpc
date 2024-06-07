@@ -12,7 +12,7 @@ type JSONRPCClient struct {
 }
 
 func NewJSONRPCClient(uri string) *JSONRPCClient {
-	req := requester.New(uri, "faucet")
+	req := requester.New(uri, "")
 	return &JSONRPCClient{
 		requester: req,
 	}
