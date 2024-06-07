@@ -2,17 +2,25 @@ package rpc
 
 import (
 	"context"
+	"strings"
 
 	"github.com/ava-labs/avalanchego/ids"
 	"github.com/ava-labs/hypersdk/requester"
+)
+
+const (
+	JSONRPCEndpoint = "/faucet"
 )
 
 type JSONRPCClient struct {
 	requester *requester.EndpointRequester
 }
 
+// New creates a new client object.
 func NewJSONRPCClient(uri string) *JSONRPCClient {
-	req := requester.New(uri, "")
+	uri = strings.TrimSuffix(uri, "/")
+	uri += JSONRPCEndpoint
+	req := requester.New(uri, "faucet")
 	return &JSONRPCClient{
 		requester: req,
 	}
@@ -55,6 +63,7 @@ func (cli *JSONRPCClient) SolveChallenge(ctx context.Context, addr string, salt 
 	return resp.TxID, resp.Amount, err
 }
 
+// UpdateNuklaiRPC updates the RPC url for Nuklai, only if admin token is valid
 func (cli *JSONRPCClient) UpdateNuklaiRPC(ctx context.Context, adminToken string, newNuklaiRPCUrl string) (bool, error) {
 	resp := new(UpdateNuklaiRPCReply)
 	err := cli.requester.SendRequest(

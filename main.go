@@ -3,9 +3,7 @@ package main
 import (
 	"context"
 	"database/sql"
-	"encoding/json"
 	"fmt"
-	"io"
 	"net"
 	"net/http"
 	"os"
@@ -15,6 +13,7 @@ import (
 
 	"github.com/ava-labs/avalanchego/utils/logging"
 	"github.com/ava-labs/hypersdk/crypto/ed25519"
+	"github.com/ava-labs/hypersdk/server"
 	"github.com/ava-labs/hypersdk/utils"
 	"github.com/joho/godotenv"
 	_ "github.com/lib/pq"
@@ -26,7 +25,7 @@ import (
 )
 
 var (
-	httpConfig = &http.Server{
+	httpConfig = server.HTTPConfig{
 		ReadTimeout:       30 * time.Second,
 		ReadHeaderTimeout: 30 * time.Second,
 		WriteTimeout:      30 * time.Second,
@@ -46,7 +45,7 @@ func HealthHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func main() {
-	err := godotenv.Overload()
+	err := godotenv.Overload() // Overload the environment variables with those from the .env file
 	if err != nil {
 		utils.Outf("{{red}}Error loading .env file{{/}}: %v\n", err)
 		os.Exit(1)
@@ -64,12 +63,14 @@ func main() {
 	log := l
 	log.Info("Logger initialized")
 
+	// Load config from environment variables
 	config, err := config.LoadConfigFromEnv()
 	if err != nil {
 		fatal(log, "cannot load config from environment variables", zap.Error(err))
 	}
 	log.Info("Config loaded from environment variables")
 
+	// Create private key
 	if len(config.PrivateKeyBytes) == 0 {
 		priv, err := ed25519.GeneratePrivateKey()
 		if err != nil {
@@ -80,6 +81,7 @@ func main() {
 	}
 	log.Info("Private key generated")
 
+	// Create server
 	listenAddress := net.JoinHostPort(config.HTTPHost, fmt.Sprintf("%d", config.HTTPPort))
 	listener, err := net.Listen("tcp", listenAddress)
 	if err != nil {
@@ -96,9 +98,11 @@ func main() {
 		IdleTimeout:  httpConfig.IdleTimeout,
 	}
 
+	// Add health check handler
 	mux.HandleFunc("/health", HealthHandler)
 	log.Info("Health handler added")
 
+	// Retry mechanism for PostgreSQL connection
 	var db *sql.DB
 	for i := 0; i < 10; i++ {
 		db, err = sql.Open("postgres", fmt.Sprintf("host=%s port=%d user=%s password=%s dbname=%s sslmode=%s",
@@ -121,6 +125,7 @@ func main() {
 	}
 	log.Info("Database connection established")
 
+	// Start manager with context handling
 	manager, err := manager.New(log, config)
 	if err != nil {
 		fatal(log, "cannot create manager", zap.Error(err))
@@ -135,39 +140,22 @@ func main() {
 		}
 	}()
 
+	// Add faucet handler
 	faucetServer := frpc.NewJSONRPCServer(manager)
-
-	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		if r.Method == http.MethodPost {
-			body, err := io.ReadAll(r.Body)
-			if err != nil {
-				http.Error(w, "could not read request body", http.StatusInternalServerError)
-				return
-			}
-
-			var req frpc.JSONRPCRequest
-			err = json.Unmarshal(body, &req)
-			if err != nil {
-				log.Error("Failed to unmarshal JSON-RPC request", zap.Error(err))
-				http.Error(w, "invalid JSON-RPC request", http.StatusBadRequest)
-				return
-			}
-
-			response := faucetServer.HandleRequest(req)
-
-			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode(response)
-		}
-	})
-
+	handler, err := server.NewHandler(faucetServer, "faucet")
+	if err != nil {
+		fatal(log, "cannot create handler", zap.Error(err))
+	}
+	mux.Handle("/", handler)
 	log.Info("Faucet handler added")
 
+	// Start server
 	sigs := make(chan os.Signal, 1)
 	signal.Notify(sigs, syscall.SIGINT, syscall.SIGTERM)
 	go func() {
 		sig := <-sigs
 		log.Info("Triggering server shutdown", zap.Any("signal", sig))
-		cancel()
+		cancel() // this will signal the manager's run function to stop
 		_ = srv.Shutdown(ctx)
 	}()
 	log.Info("Server starting")

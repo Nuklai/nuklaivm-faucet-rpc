@@ -1,112 +1,30 @@
 package rpc
 
 import (
-	"context"
-	"encoding/json"
+	"errors"
+	"net/http"
 
 	"github.com/ava-labs/avalanchego/ids"
 	"github.com/ava-labs/hypersdk/codec"
-	"github.com/nuklai/nuklai-faucet/manager"
 	"github.com/nuklai/nuklaivm/consts"
 )
 
 type JSONRPCServer struct {
-	m *manager.Manager
+	m Manager
 }
 
-func NewJSONRPCServer(m *manager.Manager) *JSONRPCServer {
+func NewJSONRPCServer(m Manager) *JSONRPCServer {
 	return &JSONRPCServer{m}
-}
-
-type JSONRPCRequest struct {
-	JSONRPC string          `json:"jsonrpc"`
-	Method  string          `json:"method"`
-	Params  json.RawMessage `json:"params"`
-	ID      interface{}     `json:"id"`
-}
-
-type JSONRPCResponse struct {
-	JSONRPC string        `json:"jsonrpc"`
-	Result  interface{}   `json:"result,omitempty"`
-	Error   *jsonrpcError `json:"error,omitempty"`
-	ID      interface{}   `json:"id"`
-}
-
-type jsonrpcError struct {
-	Code    int         `json:"code"`
-	Message string      `json:"message"`
-	Data    interface{} `json:"data,omitempty"`
-}
-
-func (j *JSONRPCServer) HandleRequest(req JSONRPCRequest) JSONRPCResponse {
-	var result interface{}
-	var jsonErr *jsonrpcError
-
-	switch req.Method {
-	case "faucetAddress":
-		var params struct{}
-		err := json.Unmarshal(req.Params, &params)
-		if err != nil {
-			jsonErr = &jsonrpcError{Code: -32602, Message: "Invalid params"}
-			break
-		}
-		var reply FaucetAddressReply
-		jsonErr = j.FaucetAddress(params, &reply)
-		result = reply
-
-	case "challenge":
-		var params struct{}
-		err := json.Unmarshal(req.Params, &params)
-		if err != nil {
-			jsonErr = &jsonrpcError{Code: -32602, Message: "Invalid params"}
-			break
-		}
-		var reply ChallengeReply
-		jsonErr = j.Challenge(params, &reply)
-		result = reply
-
-	case "solveChallenge":
-		var params SolveChallengeArgs
-		err := json.Unmarshal(req.Params, &params)
-		if err != nil {
-			jsonErr = &jsonrpcError{Code: -32602, Message: "Invalid params"}
-			break
-		}
-		var reply SolveChallengeReply
-		jsonErr = j.SolveChallenge(params, &reply)
-		result = reply
-
-	case "updateNuklaiRPC":
-		var params UpdateNuklaiRPCArgs
-		err := json.Unmarshal(req.Params, &params)
-		if err != nil {
-			jsonErr = &jsonrpcError{Code: -32602, Message: "Invalid params"}
-			break
-		}
-		var reply UpdateNuklaiRPCReply
-		jsonErr = j.UpdateNuklaiRPC(params, &reply)
-		result = reply
-
-	default:
-		jsonErr = &jsonrpcError{Code: -32601, Message: "Method not found"}
-	}
-
-	return JSONRPCResponse{
-		JSONRPC: "2.0",
-		Result:  result,
-		Error:   jsonErr,
-		ID:      req.ID,
-	}
 }
 
 type FaucetAddressReply struct {
 	Address string `json:"address"`
 }
 
-func (j *JSONRPCServer) FaucetAddress(_ struct{}, reply *FaucetAddressReply) *jsonrpcError {
-	addr, err := j.m.GetFaucetAddress(context.Background())
+func (j *JSONRPCServer) FaucetAddress(req *http.Request, _ *struct{}, reply *FaucetAddressReply) (err error) {
+	addr, err := j.m.GetFaucetAddress(req.Context())
 	if err != nil {
-		return &jsonrpcError{Code: -32000, Message: err.Error()}
+		return err
 	}
 	reply.Address = codec.MustAddressBech32(consts.HRP, addr)
 	return nil
@@ -117,10 +35,10 @@ type ChallengeReply struct {
 	Difficulty uint16 `json:"difficulty"`
 }
 
-func (j *JSONRPCServer) Challenge(_ struct{}, reply *ChallengeReply) *jsonrpcError {
-	salt, difficulty, err := j.m.GetChallenge(context.Background())
+func (j *JSONRPCServer) Challenge(req *http.Request, _ *struct{}, reply *ChallengeReply) (err error) {
+	salt, difficulty, err := j.m.GetChallenge(req.Context())
 	if err != nil {
-		return &jsonrpcError{Code: -32000, Message: err.Error()}
+		return err
 	}
 	reply.Salt = salt
 	reply.Difficulty = difficulty
@@ -138,14 +56,14 @@ type SolveChallengeReply struct {
 	Amount uint64 `json:"amount"`
 }
 
-func (j *JSONRPCServer) SolveChallenge(args SolveChallengeArgs, reply *SolveChallengeReply) *jsonrpcError {
+func (j *JSONRPCServer) SolveChallenge(req *http.Request, args *SolveChallengeArgs, reply *SolveChallengeReply) error {
 	addr, err := codec.ParseAddressBech32(consts.HRP, args.Address)
 	if err != nil {
-		return &jsonrpcError{Code: -32602, Message: "Invalid address"}
+		return err
 	}
-	txID, amount, err := j.m.SolveChallenge(context.Background(), addr, args.Salt, args.Solution)
+	txID, amount, err := j.m.SolveChallenge(req.Context(), addr, args.Salt, args.Solution)
 	if err != nil {
-		return &jsonrpcError{Code: -32000, Message: err.Error()}
+		return err
 	}
 	reply.TxID = txID
 	reply.Amount = amount
@@ -161,13 +79,14 @@ type UpdateNuklaiRPCReply struct {
 	Success bool `json:"success"`
 }
 
-func (j *JSONRPCServer) UpdateNuklaiRPC(args UpdateNuklaiRPCArgs, reply *UpdateNuklaiRPCReply) *jsonrpcError {
+func (j *JSONRPCServer) UpdateNuklaiRPC(req *http.Request, args *UpdateNuklaiRPCArgs, reply *UpdateNuklaiRPCReply) error {
+	// Validate the admin token
 	if args.AdminToken != j.m.Config().AdminToken {
-		return &jsonrpcError{Code: -32000, Message: "unauthorized user"}
+		return errors.New("unauthorized user")
 	}
-	err := j.m.UpdateNuklaiRPC(context.Background(), args.NuklaiRPCUrl)
+	err := j.m.UpdateNuklaiRPC(req.Context(), args.NuklaiRPCUrl)
 	if err != nil {
-		return &jsonrpcError{Code: -32000, Message: err.Error()}
+		return err
 	}
 	reply.Success = true
 	return nil
