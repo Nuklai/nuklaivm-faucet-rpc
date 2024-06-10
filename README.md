@@ -77,3 +77,35 @@ To view the logs of the Docker container:
 ```bash
 ./scripts/run_docker.sh logs
 ```
+
+## How does the faucet work?
+
+The faucet service is designed to distribute test NAI tokens to users, primarily for testing purposes on the Nuklai blockchain. The main components of the service include the main server setup, configuration management, database interaction, a manager that handles the faucet logic, and an RPC server for client interactions.
+
+### Workflow
+
+1. **User Requests a Challenge**:
+
+   - The user calls the `Challenge` method on the JSON-RPC server.
+   - The server responds with the current salt and difficulty.
+
+2. **User Solves the Challenge**:
+
+   - The user computes a solution for the provided challenge.
+   - The user submits the solution via the `SolveChallenge` method.
+   - The server verifies the solution:
+     - If valid, it transfers the specified amount of tokens to the user's address.
+     - The transaction is saved in the PostgreSQL database.
+
+3. **Challenge Rotation**:
+
+   - The manager periodically rotates the salt and adjusts the difficulty based on the number of solutions.
+
+4. **Health Check**:
+
+   - A simple health check endpoint is available at `/health` to verify the service is running.
+
+5. **Dynamic Configuration**:
+   - An authorized admin can update the RPC URL using the `UpdateNuklaiRPC` method with the correct admin token.
+
+This setup ensures the faucet service can handle requests efficiently, manage challenges dynamically, and provide necessary endpoints for client interactions.
