@@ -73,7 +73,7 @@ func New(logger logging.Logger, config *fconfig.Config) (*Manager, error) {
 	if err != nil {
 		return nil, err
 	}
-	bal, err := ncli.Balance(ctx, m.config.AddressBech32(), ids.Empty)
+	bal, err := ncli.Balance(ctx, m.config.AddressBech32(), nconsts.Symbol)
 	if err != nil {
 		return nil, err
 	}
@@ -150,7 +150,7 @@ func (m *Manager) sendFunds(ctx context.Context, destination codec.Address, amou
 		m.log.Warn("Abandoning airdrop because network fee is greater than amount", zap.String("maxFee", utils.FormatBalance(maxFee, nconsts.Decimals)))
 		return ids.Empty, 0, errors.New("network fee too high")
 	}
-	bal, err := m.ncli.Balance(ctx, m.config.AddressBech32(), ids.Empty)
+	bal, err := m.ncli.Balance(ctx, m.config.AddressBech32(), nconsts.Symbol)
 	if err != nil {
 		m.log.Error("Failed to fetch balance", zap.Error(err))
 		return ids.Empty, 0, err
@@ -249,7 +249,7 @@ func (m *Manager) UpdateNuklaiRPC(ctx context.Context, newNuklaiRPCUrl string) e
 	m.difficulty = m.config.StartDifficulty
 	m.lastRotation = time.Now().Unix()
 
-	bal, err := m.ncli.Balance(ctx, m.config.AddressBech32(), ids.Empty)
+	bal, err := m.ncli.Balance(ctx, m.config.AddressBech32(), nconsts.Symbol)
 	if err != nil {
 		return err
 	}
