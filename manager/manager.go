@@ -6,6 +6,7 @@ package manager
 import (
 	"bytes"
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
 	"sync"
@@ -49,7 +50,7 @@ type Manager struct {
 	db *database.DB
 }
 
-func New(logger logging.Logger, config *fconfig.Config) (*Manager, error) {
+func New(logger logging.Logger, config *fconfig.Config, db *sql.DB) (*Manager, error) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cli := rpc.NewJSONRPCClient(config.NuklaiRPC)
 	networkID, _, chainID, err := cli.Network(ctx)
@@ -60,12 +61,12 @@ func New(logger logging.Logger, config *fconfig.Config) (*Manager, error) {
 
 	ncli := nrpc.NewJSONRPCClient(config.NuklaiRPC, networkID, chainID)
 
-	db, err := database.NewDB(config)
+	dbInstance, err := database.NewDB(db)
 	if err != nil {
 		cancel()
 		return nil, err
 	}
-	m := &Manager{log: logger, config: config, cli: cli, ncli: ncli, factory: auth.NewED25519Factory(config.PrivateKey()), cancelFunc: cancel, db: db}
+	m := &Manager{log: logger, config: config, cli: cli, ncli: ncli, factory: auth.NewED25519Factory(config.PrivateKey()), cancelFunc: cancel, db: dbInstance}
 	m.lastRotation = time.Now().Unix()
 	m.difficulty = m.config.StartDifficulty
 	m.solutions = set.NewSet[ids.ID](m.config.SolutionsPerSalt)

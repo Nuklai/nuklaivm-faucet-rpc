@@ -6,11 +6,9 @@ package database
 import (
 	"database/sql"
 	"log"
-	"strconv"
 	"time"
 
 	_ "github.com/lib/pq"
-	"github.com/nuklai/nuklai-faucet/config"
 )
 
 type DB struct {
@@ -24,18 +22,8 @@ type Transaction struct {
 	Timestamp   int64  `json:"timestamp"`
 }
 
-func NewDB(config *config.Config) (*DB, error) {
-	connStr := "host=" + config.PostgresHost +
-		" port=" + strconv.Itoa(config.PostgresPort) +
-		" user=" + config.PostgresUser +
-		" password=" + config.PostgresPassword +
-		" dbname=" + config.PostgresDBName +
-		" sslmode=disable"
-	db, err := sql.Open("postgres", connStr)
-	if err != nil {
-		log.Printf("Error opening database: %v", err)
-		return nil, err
-	}
+func NewDB(conn *sql.DB) (*DB, error) {
+	db := &DB{conn: conn}
 
 	query := `CREATE TABLE IF NOT EXISTS transactions (
         txid TEXT PRIMARY KEY,
@@ -43,14 +31,14 @@ func NewDB(config *config.Config) (*DB, error) {
         amount BIGINT,
         timestamp BIGINT
     )`
-	_, err = db.Exec(query)
+	_, err := db.conn.Exec(query)
 	if err != nil {
 		log.Printf("Error creating table: %v", err)
 		return nil, err
 	}
 
 	log.Println("Database initialized successfully")
-	return &DB{conn: db}, nil
+	return db, nil
 }
 
 func (db *DB) SaveTransaction(txID, destination string, amount uint64) error {

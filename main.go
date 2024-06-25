@@ -108,8 +108,9 @@ func main() {
 	// Retry mechanism for PostgreSQL connection
 	var db *sql.DB
 	for i := 0; i < 10; i++ {
-		db, err = sql.Open("postgres", fmt.Sprintf("host=%s port=%d user=%s password=%s dbname=%s sslmode=%s",
-			config.PostgresHost, config.PostgresPort, config.PostgresUser, config.PostgresPassword, config.PostgresDBName, config.PostgresSSLMode))
+		connStr := fmt.Sprintf("host=%s port=%d user=%s password=%s dbname=%s sslmode=%s",
+			config.PostgresHost, config.PostgresPort, config.PostgresUser, config.PostgresPassword, config.PostgresDBName, config.PostgresSSLMode)
+		db, err = sql.Open("postgres", connStr)
 		if err != nil {
 			log.Warn("Error opening database", zap.Error(err))
 			time.Sleep(5 * time.Second)
@@ -129,7 +130,7 @@ func main() {
 	log.Info("Database connection established")
 
 	// Start manager with context handling
-	manager, err := manager.New(log, config)
+	manager, err := manager.New(log, config, db)
 	if err != nil {
 		fatal(log, "cannot create manager", zap.Error(err))
 	}
