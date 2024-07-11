@@ -8,16 +8,15 @@ WORKDIR /go/src/app
 COPY . .
 # Build the Go application
 RUN go build -o build/faucet
-
+COPY ./infra/scripts/startup.sh build/
 
 #final stage
 FROM alpine:latest
 RUN addgroup -S nuklai && adduser -S nuklai -G nuklai
 COPY --from=builder --chown=nuklai /go/src/app/build /app
 USER nuklai
-# Create .env file
-RUN chmod +x ./infra/scripts/startup.sh
-ENTRYPOINT [ "./infra/scripts/startup.sh" ]
+RUN chmod +x startup.sh
+ENTRYPOINT [ "./startup.sh" ]
 CMD ["./faucet"]
 LABEL Name=faucetrpc
 EXPOSE 10591
