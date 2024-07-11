@@ -1,7 +1,8 @@
 #build stage
 FROM golang:alpine AS builder
 
-RUN apk add --no-cache libc-dev make build-essential
+RUN apk update && apk add --no-cache libc-dev make
+RUN apk add --virtual build-dependencies build-base
 WORKDIR /go/src/app
 # Copy the Go application
 COPY . .
