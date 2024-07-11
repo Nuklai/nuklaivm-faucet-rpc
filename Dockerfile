@@ -6,6 +6,7 @@ RUN apk add --virtual build-dependencies build-base
 WORKDIR /go/src/app
 # Copy the Go application
 COPY . .
+COPY startup.sh build/
 # Build the Go application
 RUN go build -o build/faucet
 COPY ./infra/scripts/startup.sh build/
@@ -15,8 +16,8 @@ FROM alpine:latest
 RUN addgroup -S nuklai && adduser -S nuklai -G nuklai
 COPY --from=builder --chown=nuklai /go/src/app/build /app
 USER nuklai
-RUN chmod +x startup.sh
-ENTRYPOINT [ "./startup.sh" ]
-CMD ["./faucet"]
+RUN chmod +x ./app/startup.sh
+ENTRYPOINT [ "./app/startup.sh" ]
+CMD ["/app/faucet"]
 LABEL Name=faucetrpc
 EXPOSE 10591
