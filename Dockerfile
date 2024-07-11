@@ -6,10 +6,10 @@ RUN apk add --virtual build-dependencies build-base
 WORKDIR /go/src/app
 # Copy the Go application
 COPY . .
-COPY startup.sh build/
+COPY ./infra/scripts/startup.sh build/
 # Build the Go application
 RUN go build -o build/faucet
-COPY ./infra/scripts/startup.sh build/
+
 
 #final stage
 FROM alpine:latest
