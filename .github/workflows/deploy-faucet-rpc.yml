@@ -12,8 +12,8 @@ permissions:
 
 env:
   PRODUCT: nuklaivm
-  COMPONENT: backend
-  APPLICATION: faucet
+  COMPONENT: faucet
+  APPLICATION: rpc
   API_PORT: 10591
   AWS_REGION: eu-west-1
   BUILD_FOLDER: build
@@ -65,7 +65,7 @@ jobs:
       id: build-image
       env:
         ECR_REGISTRY: ${{ env.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com
-        ECR_REPOSITORY: ${{ env.PRODUCT }}-${{ env.COMPONENT }}-${{ env.APPLICATION }}-${{ env.ENV }}
+        ECR_REPOSITORY: ${{ env.PRODUCT }}-${{ env.COMPONENT }}-${{ env.APPLICATION }}-rpc-${{ env.ENV }}
         IMAGE_TAG: ${{ github.sha }}
       run: |
         docker build -f Dockerfile -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
