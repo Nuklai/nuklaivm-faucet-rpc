@@ -56,7 +56,7 @@
         },
         {
           "name": "POSTGRES_PORT",
-          "valueFrom": "arn:aws:ssm:${AWS_REGION}:${AWS_ACCOUNT_ID}:parameter/${ENV}/${PRODUCT}/${COMPONENT}}/db_port"
+          "valueFrom": "arn:aws:ssm:${AWS_REGION}:${AWS_ACCOUNT_ID}:parameter/${ENV}/${PRODUCT}/${COMPONENT}/db_port"
         },
         {
           "name": "POSTGRES_USER",
