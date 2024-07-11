@@ -40,7 +40,7 @@
       "secrets": [
         {
           "name": "NUKLAI_RPC",
-          "valueFrom": "arn:aws:ssm:${AWS_REGION}:${AWS_ACCOUNT_ID}:parameter/${ENV}/${PRODUCT}/${COMPONENT}/rpc_node_url_nuklai"
+          "valueFrom": "arn:aws:ssm:${AWS_REGION}:${AWS_ACCOUNT_ID}:parameter/${ENV}/${PRODUCT}/${COMPONENT}/nuklaivm_rpc_url"
         },
         {
           "name": "PRIVATE_KEY_BYTES",
@@ -52,23 +52,23 @@
         },
         {
           "name": "POSTGRES_HOST",
-          "valueFrom": "arn:aws:ssm:${AWS_REGION}:${AWS_ACCOUNT_ID}:parameter/${ENV}/${PRODUCT}/${COMPONENT}/${APPLICATION}/db_host"
+          "valueFrom": "arn:aws:ssm:${AWS_REGION}:${AWS_ACCOUNT_ID}:parameter/${ENV}/${PRODUCT}/${COMPONENT}/db_host"
         },
         {
           "name": "POSTGRES_PORT",
-          "valueFrom": "arn:aws:ssm:${AWS_REGION}:${AWS_ACCOUNT_ID}:parameter/${ENV}/${PRODUCT}/${COMPONENT}/${APPLICATION}/db_port"
+          "valueFrom": "arn:aws:ssm:${AWS_REGION}:${AWS_ACCOUNT_ID}:parameter/${ENV}/${PRODUCT}/${COMPONENT}}/db_port"
         },
         {
           "name": "POSTGRES_USER",
-          "valueFrom": "arn:aws:ssm:${AWS_REGION}:${AWS_ACCOUNT_ID}:parameter/${ENV}/${PRODUCT}/${COMPONENT}/${APPLICATION}/db_username"
+          "valueFrom": "arn:aws:ssm:${AWS_REGION}:${AWS_ACCOUNT_ID}:parameter/${ENV}/${PRODUCT}/${COMPONENT}/db_username"
         },
         {
           "name": "POSTGRES_PASSWORD",
-          "valueFrom": "arn:aws:ssm:${AWS_REGION}:${AWS_ACCOUNT_ID}:parameter/${ENV}/${PRODUCT}/${COMPONENT}/${APPLICATION}/db_password"
+          "valueFrom": "arn:aws:ssm:${AWS_REGION}:${AWS_ACCOUNT_ID}:parameter/${ENV}/${PRODUCT}/${COMPONENT}/db_password"
         },
         {
           "name": "POSTGRES_DBNAME",
-          "valueFrom": "arn:aws:ssm:${AWS_REGION}:${AWS_ACCOUNT_ID}:parameter/${ENV}/${PRODUCT}/${COMPONENT}/${APPLICATION}/db_name"
+          "valueFrom": "arn:aws:ssm:${AWS_REGION}:${AWS_ACCOUNT_ID}:parameter/${ENV}/${PRODUCT}/${COMPONENT}/db_name"
         }
       ],
       "logConfiguration": {
