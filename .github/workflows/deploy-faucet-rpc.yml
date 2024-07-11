@@ -65,7 +65,7 @@ jobs:
       id: build-image
       env:
         ECR_REGISTRY: ${{ env.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com
-        ECR_REPOSITORY: ${{ env.PRODUCT }}-${{ env.COMPONENT }}-${{ env.APPLICATION }}-rpc-${{ env.ENV }}
+        ECR_REPOSITORY: ${{ env.PRODUCT }}-${{ env.COMPONENT }}-${{ env.APPLICATION }}-${{ env.ENV }}
         IMAGE_TAG: ${{ github.sha }}
       run: |
         docker build -f Dockerfile -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
