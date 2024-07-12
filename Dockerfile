@@ -18,7 +18,7 @@ COPY --from=builder --chown=nuklai /go/src/app/build /app
 USER nuklai
 RUN chmod +x /app/startup.sh
 RUN ls -la /app
-ENTRYPOINT [ "/app/startup.sh" ]
-CMD ["/app/faucet"]
+CMD [ "/app/startup.sh" ]
+ENTRYPOINT [ "/app/faucet" ]
 LABEL Name=faucetrpc
 EXPOSE 10591
