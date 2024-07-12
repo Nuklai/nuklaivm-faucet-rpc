@@ -16,9 +16,9 @@ FROM alpine:latest
 RUN addgroup -S nuklai && adduser -S nuklai -G nuklai
 COPY --from=builder --chown=nuklai /go/src/app/build /app
 USER nuklai
-RUN chmod a+x /app/startup.sh
-CMD ["cd", "/app"]
-CMD ["sh", "/app/startup.sh"]
+WORKDIR /app
+RUN chmod a+x startup.sh
+CMD ["sh", "startup.sh"]
 LABEL Name=faucetrpc
 EXPOSE 10591
-ENTRYPOINT [ "/app/faucet" ]
+ENTRYPOINT [ "./faucet" ]
