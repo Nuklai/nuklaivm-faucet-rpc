@@ -17,7 +17,7 @@ RUN addgroup -S nuklai && adduser -S nuklai -G nuklai
 COPY --from=builder --chown=nuklai /go/src/app/build /app
 USER nuklai
 RUN chmod a+x /app/startup.sh
-RUN pwd
+CMD ["cd", "/app"]
 CMD ["sh", "/app/startup.sh"]
 LABEL Name=faucetrpc
 EXPOSE 10591
