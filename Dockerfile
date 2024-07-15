@@ -23,4 +23,4 @@ RUN ls -la /app
 RUN cat /app/startup.sh
 LABEL Name=faucetrpc
 EXPOSE 10591
-CMD .["/app/faucet"]
+CMD [ "/app/faucet" ]
