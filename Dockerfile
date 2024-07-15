@@ -16,7 +16,7 @@ FROM alpine:latest
 RUN addgroup -S nuklai && adduser -S nuklai -G nuklai
 COPY --from=builder --chown=nuklai /go/src/app/build /app
 USER nuklai
-RUN chmod a+x startup.sh
+RUN chmod a+x /app/startup.sh
 ENTRYPOINT [ "sh", /app/startup.sh" ]
 RUN ls -la
 LABEL Name=faucetrpc
