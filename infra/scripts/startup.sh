@@ -1,5 +1,5 @@
 #!/bin/bash
-APP_DIR="."
+APP_DIR="/app"
 
 echo "PRIVATE_KEY_BYTES="$PRIVATE_KEY_BYTES"" >> ${APP_DIR}/.env
 echo "NUKLAI_RPC="$NUKLAI_RPC"" >> ${APP_DIR}/.env
