@@ -13,6 +13,7 @@ RUN go build -o build/faucet
 
 #final stage
 FROM alpine:latest
+RUN apk update && apk add --no-cache bash core-utils
 RUN addgroup -S nuklai && adduser -S nuklai -G nuklai
 COPY --from=builder --chown=nuklai /go/src/app/build /app
 USER nuklai
