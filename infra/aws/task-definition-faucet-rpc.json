@@ -35,6 +35,10 @@
         {
           "name": "ENV",
           "value": "${ENV}"
+        },
+        {
+          "name": "POSTGRES_ENABLESSL",
+          "value": "true"
         }
       ],
       "secrets": [
