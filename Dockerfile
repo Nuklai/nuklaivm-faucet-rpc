@@ -14,11 +14,11 @@ RUN go build -o build/faucet
 #final stage
 FROM alpine:latest
 RUN addgroup -S nuklai && adduser -S nuklai -G nuklai
-COPY --from=builder --chown=nuklai /go/src/app/build /
+COPY --from=builder --chown=nuklai /go/src/app/build /app
 USER nuklai
 RUN chmod a+x startup.sh
-ENTRYPOINT [ "sh", "startup.sh" ]
+ENTRYPOINT [ "sh", /app/startup.sh" ]
 RUN ls -la
 LABEL Name=faucetrpc
 EXPOSE 10591
-CMD .["./faucet"]
+CMD .["/app/faucet"]
