@@ -67,7 +67,7 @@ func LoadConfigFromEnv() (*Config, error) {
 		return nil, err
 	}
 
-	startDifficulty, err := strconv.ParseUint(GetEnv("START_DIFFICULTY", "25"), 10, 16)
+	startDifficulty, err := strconv.ParseUint(GetEnv("START_DIFFICULTY", "1"), 10, 16)
 	if err != nil {
 		return nil, err
 	}

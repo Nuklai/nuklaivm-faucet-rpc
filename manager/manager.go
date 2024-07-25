@@ -18,6 +18,7 @@ import (
 	"github.com/ava-labs/avalanchego/utils/timer"
 	"github.com/ava-labs/hypersdk/chain"
 	"github.com/ava-labs/hypersdk/codec"
+	"github.com/ava-labs/hypersdk/pubsub"
 	"github.com/ava-labs/hypersdk/rpc"
 	"github.com/ava-labs/hypersdk/utils"
 	fconfig "github.com/nuklai/nuklai-faucet/config"
@@ -35,6 +36,7 @@ type Manager struct {
 	config *fconfig.Config
 
 	cli  *rpc.JSONRPCClient
+	scli *rpc.WebSocketClient
 	ncli *nrpc.JSONRPCClient
 
 	factory *auth.ED25519Factory
@@ -59,6 +61,16 @@ func New(logger logging.Logger, config *fconfig.Config, db *sql.DB) (*Manager, e
 		return nil, err
 	}
 
+	scli, err := rpc.NewWebSocketClient(
+		config.NuklaiRPC,
+		rpc.DefaultHandshakeTimeout,
+		pubsub.MaxPendingMessages,
+		pubsub.MaxReadMessageSize,
+	)
+	if err != nil {
+		return nil, err
+	}
+
 	ncli := nrpc.NewJSONRPCClient(config.NuklaiRPC, networkID, chainID)
 
 	dbInstance, err := database.NewDB(db)
@@ -66,7 +78,7 @@ func New(logger logging.Logger, config *fconfig.Config, db *sql.DB) (*Manager, e
 		cancel()
 		return nil, err
 	}
-	m := &Manager{log: logger, config: config, cli: cli, ncli: ncli, factory: auth.NewED25519Factory(config.PrivateKey()), cancelFunc: cancel, db: dbInstance}
+	m := &Manager{log: logger, config: config, cli: cli, scli: scli, ncli: ncli, factory: auth.NewED25519Factory(config.PrivateKey()), cancelFunc: cancel, db: dbInstance}
 	m.lastRotation = time.Now().Unix()
 	m.difficulty = m.config.StartDifficulty
 	m.solutions = set.NewSet[ids.ID](m.config.SolutionsPerSalt)
@@ -138,7 +150,7 @@ func (m *Manager) sendFunds(ctx context.Context, destination codec.Address, amou
 		m.log.Error("Failed to create parser", zap.Error(err))
 		return ids.Empty, 0, err
 	}
-	submit, tx, maxFee, err := m.cli.GenerateTransaction(ctx, parser, []chain.Action{&actions.Transfer{
+	_, tx, maxFee, err := m.cli.GenerateTransaction(ctx, parser, []chain.Action{&actions.Transfer{
 		To:    destination,
 		Asset: ids.Empty,
 		Value: amount,
@@ -161,16 +173,33 @@ func (m *Manager) sendFunds(ctx context.Context, destination codec.Address, amou
 		return ids.Empty, 0, errors.New("insufficient balance")
 	}
 
-	err = submit(ctx)
-	if err == nil {
-		destinationAddr, err := codec.AddressBech32(nconsts.HRP, destination)
+	if err = m.scli.RegisterTx(tx); err != nil {
+		m.log.Error("Failed to register transaction", zap.Error(err))
+		return ids.Empty, 0, err
+	}
+	for {
+		txID, dErr, _, err := m.scli.ListenTx(ctx)
+		if dErr != nil {
+			return ids.Empty, 0, dErr
+		}
 		if err != nil {
-			m.log.Error("Failed to convert address to bech32", zap.Error(err))
 			return ids.Empty, 0, err
 		}
-		_ = m.db.SaveTransaction(tx.ID().String(), destinationAddr, amount)
-		m.log.Info("Transaction saved", zap.String("txID", tx.ID().String()), zap.String("destination", destinationAddr), zap.Uint64("amount", amount))
+		if txID == tx.ID() {
+			break
+		}
+		// TODO: don't drop these results (may be needed by a different connection)
+		m.log.Warn("skipping unexpected transaction", zap.String("txID", tx.ID().String()))
 	}
+
+	destinationAddr, err := codec.AddressBech32(nconsts.HRP, destination)
+	if err != nil {
+		m.log.Error("Failed to convert address to bech32", zap.Error(err))
+		return ids.Empty, 0, err
+	}
+	_ = m.db.SaveTransaction(tx.ID().String(), destinationAddr, amount)
+	m.log.Info("Transaction saved", zap.String("txID", tx.ID().String()), zap.String("destination", destinationAddr), zap.Uint64("amount", amount))
+
 	return tx.ID(), maxFee, err
 }
 
@@ -206,8 +235,8 @@ func (m *Manager) SolveChallenge(ctx context.Context, solver codec.Address, salt
 	m.solutions.Add(solutionID)
 
 	if m.solutions.Len() >= m.config.SolutionsPerSalt {
-		m.difficulty++
-		m.log.Info("Increasing faucet difficulty", zap.Uint16("new difficulty", m.difficulty))
+		// m.difficulty++
+		// m.log.Info("Increasing faucet difficulty", zap.Uint16("new difficulty", m.difficulty))
 		m.lastRotation = time.Now().Unix()
 		m.salt, err = challenge.New()
 		if err != nil {
@@ -217,7 +246,8 @@ func (m *Manager) SolveChallenge(ctx context.Context, solver codec.Address, salt
 		m.solutions.Clear()
 		m.t.Cancel()
 		m.t.SetTimeoutIn(time.Duration(m.config.TargetDurationPerSalt) * time.Second)
-		m.log.Info("Salt and difficulty updated due to hitting expected solutions", zap.Uint16("new difficulty", m.difficulty))
+		m.log.Info("Salt updated", zap.Uint16("new difficulty", m.difficulty))
+		// m.log.Info("Salt and difficulty updated due to hitting expected solutions", zap.Uint16("new difficulty", m.difficulty))
 	}
 	return txID, m.config.Amount, nil
 }
@@ -237,6 +267,18 @@ func (m *Manager) UpdateNuklaiRPC(ctx context.Context, newNuklaiRPCUrl string) e
 		return fmt.Errorf("failed to fetch network details: %w", err)
 	}
 	m.log.Info("Fetched network details", zap.Uint32("network ID", networkID), zap.String("chain ID", chainID.String()))
+
+	scli, err := rpc.NewWebSocketClient(
+		newNuklaiRPCUrl,
+		rpc.DefaultHandshakeTimeout,
+		pubsub.MaxPendingMessages,
+		pubsub.MaxReadMessageSize,
+	)
+	if err != nil {
+		m.log.Error("Failed to create WebSocket client", zap.Error(err))
+		return fmt.Errorf("failed to create WebSocket client: %w", err)
+	}
+	m.scli = scli
 
 	m.cli = cli
 	m.ncli = nrpc.NewJSONRPCClient(newNuklaiRPCUrl, networkID, chainID)
