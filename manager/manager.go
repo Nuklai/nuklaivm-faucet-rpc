@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"sync"
 	"time"
+	"strings"
 
 	"github.com/ava-labs/avalanchego/ids"
 	"github.com/ava-labs/avalanchego/utils/logging"
@@ -108,6 +109,46 @@ func (m *Manager) Run(ctx context.Context) error {
 	m.db.Close()
 	m.log.Info("Manager run completed", zap.Error(ctx.Err()))
 	return ctx.Err()
+}
+
+func (m *Manager) WebSocketreconnect() error {
+	if m.scli != nil {
+		m.log.Info("Closing old WS connection.")
+        m.scli.Close()
+    }
+    scli, err := rpc.NewWebSocketClient(
+        m.config.NuklaiRPC,
+        rpc.DefaultHandshakeTimeout,
+        pubsub.MaxPendingMessages,
+        pubsub.MaxReadMessageSize,
+    )
+    if err != nil {
+        return err
+    }
+    m.scli = scli
+	m.log.Info("WS connection re-established.")
+    return nil
+}
+
+func (m *Manager) sendFundsRetry(ctx context.Context, destination codec.Address, amount uint64) (ids.ID, uint64, error) {
+    var lastErr error
+    for retries := 0; retries < 3; retries++ {
+        txID, maxFee, err := m.sendFunds(ctx, destination, amount)
+        if err == nil {
+            return txID, maxFee, nil
+        }
+        
+        if strings.Contains(err.Error(), "closed") {
+            if reconnErr := m.WebSocketreconnect(); reconnErr != nil {
+                m.log.Error("Error reconnecting to WS", zap.Error(reconnErr))
+                continue
+            }
+        }
+        
+        lastErr = err
+        time.Sleep(time.Second * time.Duration(retries+1))
+    }
+    return ids.Empty, 0, fmt.Errorf("failed after retries: %w", lastErr)
 }
 
 func (m *Manager) updateDifficulty() {
@@ -221,7 +262,7 @@ func (m *Manager) SolveChallenge(ctx context.Context, solver codec.Address, salt
 		return ids.Empty, 0, errors.New("duplicate solution")
 	}
 
-	txID, maxFee, err := m.sendFunds(ctx, solver, m.config.Amount)
+	txID, maxFee, err := m.sendFundsRetry(ctx, solver, m.config.Amount)
 	if err != nil {
 		m.log.Error("Failed to send funds", zap.Error(err))
 		return ids.Empty, 0, err
