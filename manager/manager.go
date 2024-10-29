@@ -126,7 +126,7 @@ func (m *Manager) WebSocketreconnect() error {
         return err
     }
     m.scli = scli
-	m.log.Info("WS connection reestablished.")
+	m.log.Info("WS connection re-established.")
     return nil
 }
 
