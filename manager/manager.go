@@ -112,6 +112,10 @@ func (m *Manager) Run(ctx context.Context) error {
 }
 
 func (m *Manager) WebSocketreconnect() error {
+	if m.scli != nil {
+		m.log.Info("Closing old WS connection.")
+        m.scli.Close()
+    }
     scli, err := rpc.NewWebSocketClient(
         m.config.NuklaiRPC,
         rpc.DefaultHandshakeTimeout,
@@ -122,6 +126,7 @@ func (m *Manager) WebSocketreconnect() error {
         return err
     }
     m.scli = scli
+	m.log.Info("WS connection reestablished.")
     return nil
 }
 
