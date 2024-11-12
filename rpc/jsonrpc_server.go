@@ -25,7 +25,8 @@ func getRateLimiter(ip string) *rate.Limiter {
 	defer mu.Unlock()
 	limiter, exists := ipLimiters[ip]
 	if !exists {
-		limiter = rate.NewLimiter(rate.Every(15*time.Second), 10)
+		// Allow 1 request per 60 seconds with 5 as burst capacity
+		limiter = rate.NewLimiter(rate.Every(60*time.Second), 5)
 		ipLimiters[ip] = limiter
 	}
 	return limiter
