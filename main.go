@@ -5,8 +5,10 @@ package main
 
 import (
 	"context"
+	"crypto/rand"
 	"database/sql"
 	"fmt"
+	"log"
 	"net"
 	"net/http"
 	"os"
@@ -14,9 +16,11 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/ava-labs/avalanchego/ids"
 	"github.com/ava-labs/avalanchego/utils/logging"
+	"github.com/ava-labs/hypersdk/auth"
+	"github.com/ava-labs/hypersdk/codec"
 	"github.com/ava-labs/hypersdk/crypto/ed25519"
-	"github.com/ava-labs/hypersdk/server"
 	"github.com/ava-labs/hypersdk/utils"
 	"github.com/joho/godotenv"
 	_ "github.com/lib/pq"
@@ -25,15 +29,6 @@ import (
 	"github.com/nuklai/nuklai-faucet/config"
 	"github.com/nuklai/nuklai-faucet/manager"
 	frpc "github.com/nuklai/nuklai-faucet/rpc"
-)
-
-var (
-	httpConfig = server.HTTPConfig{
-		ReadTimeout:       30 * time.Second,
-		ReadHeaderTimeout: 30 * time.Second,
-		WriteTimeout:      30 * time.Second,
-		IdleTimeout:       120 * time.Second,
-	}
 )
 
 func fatal(l logging.Logger, msg string, fields ...zap.Field) {
@@ -82,7 +77,7 @@ func main() {
 		config.PrivateKeyBytes = priv[:]
 		fatal(log, "private key should be set in .env file after generation")
 	}
-	log.Info("Private key generated")
+	log.Info("Private key set")
 
 	// Create server
 	listenAddress := net.JoinHostPort(config.HTTPHost, fmt.Sprintf("%d", config.HTTPPort))
@@ -96,9 +91,9 @@ func main() {
 	srv := &http.Server{
 		Addr:         listenAddress,
 		Handler:      mux,
-		ReadTimeout:  httpConfig.ReadTimeout,
-		WriteTimeout: httpConfig.WriteTimeout,
-		IdleTimeout:  httpConfig.IdleTimeout,
+		ReadTimeout:  30 * time.Second,
+		WriteTimeout: 30 * time.Second,
+		IdleTimeout:  120 * time.Second,
 	}
 
 	// Add health check handler
@@ -146,7 +141,7 @@ func main() {
 
 	// Add faucet handler
 	faucetServer := frpc.NewJSONRPCServer(manager)
-	handler, err := server.NewHandler(faucetServer, "faucet")
+	handler, err := frpc.NewHandler(faucetServer, "faucet")
 	if err != nil {
 		fatal(log, "cannot create handler", zap.Error(err))
 	}
@@ -164,8 +159,36 @@ func main() {
 	}()
 	log.Info("Server starting")
 
+	// Test initial transfer
+	performInitialTransfer(ctx, manager)
+
 	if err := srv.Serve(listener); err != nil && err != http.ErrServerClosed {
 		log.Fatal("Server failed", zap.Error(err))
 	}
+
 	log.Info("Server exited")
+}
+
+func performInitialTransfer(ctx context.Context, manager *manager.Manager) {
+	randomBytes := make([]byte, 32)
+	_, err := rand.Read(randomBytes)
+	if err != nil {
+		log.Fatalf("Failed to generate random bytes: %v", err)
+	}
+	randomID, err := ids.ToID(randomBytes)
+	if err != nil {
+		log.Fatalf("Failed to generate random ID: %v", err)
+	}
+
+	randomAddressHex := codec.CreateAddress(auth.ED25519ID, randomID)
+	log.Printf("Performing initial transfer to ready check address: %s\n", randomAddressHex.String())
+
+	txID, _, err := manager.SendFundsRetry(ctx, randomAddressHex, 1)
+	if err == nil {
+		log.Printf("Initial transfer result tx ID: %s\n", txID)
+		log.Println("Faucet is now healthy and ready to serve requests")
+		return
+	}
+
+	log.Fatal("Faucet initialization failed after 10 attempts. Exiting.")
 }

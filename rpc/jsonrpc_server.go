@@ -5,12 +5,31 @@ package rpc
 
 import (
 	"errors"
+	"fmt"
 	"net/http"
+	"sync"
+	"time"
 
 	"github.com/ava-labs/avalanchego/ids"
 	"github.com/ava-labs/hypersdk/codec"
-	"github.com/nuklai/nuklaivm/consts"
+	"golang.org/x/time/rate"
 )
+
+var (
+	ipLimiters = make(map[string]*rate.Limiter)
+	mu         sync.Mutex
+)
+
+func getRateLimiter(ip string) *rate.Limiter {
+	mu.Lock()
+	defer mu.Unlock()
+	limiter, exists := ipLimiters[ip]
+	if !exists {
+		limiter = rate.NewLimiter(rate.Every(15*time.Second), 10)
+		ipLimiters[ip] = limiter
+	}
+	return limiter
+}
 
 type JSONRPCServer struct {
 	m Manager
@@ -25,11 +44,16 @@ type FaucetAddressReply struct {
 }
 
 func (j *JSONRPCServer) FaucetAddress(req *http.Request, _ *struct{}, reply *FaucetAddressReply) (err error) {
+	// Retrieve client IP
+	clientIP := req.RemoteAddr
+	if !getRateLimiter(clientIP).Allow() {
+		return fmt.Errorf("rate limit exceeded for IP %s", clientIP)
+	}
 	addr, err := j.m.GetFaucetAddress(req.Context())
 	if err != nil {
 		return err
 	}
-	reply.Address = codec.MustAddressBech32(consts.HRP, addr)
+	reply.Address = addr.String()
 	return nil
 }
 
@@ -60,7 +84,7 @@ type SolveChallengeReply struct {
 }
 
 func (j *JSONRPCServer) SolveChallenge(req *http.Request, args *SolveChallengeArgs, reply *SolveChallengeReply) error {
-	addr, err := codec.ParseAddressBech32(consts.HRP, args.Address)
+	addr, err := codec.StringToAddress(args.Address)
 	if err != nil {
 		return err
 	}

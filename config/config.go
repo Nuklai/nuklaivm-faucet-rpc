@@ -5,12 +5,14 @@ package config
 
 import (
 	"encoding/base64"
+	"fmt"
 	"os"
 	"strconv"
+	"strings"
 
+	"github.com/ava-labs/hypersdk/auth"
 	"github.com/ava-labs/hypersdk/codec"
 	"github.com/ava-labs/hypersdk/crypto/ed25519"
-	"github.com/nuklai/nuklaivm/auth"
 	"github.com/nuklai/nuklaivm/consts"
 )
 
@@ -26,7 +28,8 @@ type Config struct {
 	SolutionsPerSalt      int
 	TargetDurationPerSalt int64 // seconds
 
-	AdminToken string
+	AdminToken       string
+	BalanceThreshold uint64
 
 	// PostgreSQL configuration
 	PostgresHost     string
@@ -37,16 +40,24 @@ type Config struct {
 	PostgresSSLMode  string
 }
 
-func (c *Config) PrivateKey() ed25519.PrivateKey {
+func (c *Config) PrivateKey() auth.PrivateKey {
+	pk := ed25519.PrivateKey(c.PrivateKeyBytes)
+	return auth.PrivateKey{
+		Address: auth.NewED25519Address(pk.PublicKey()),
+		Bytes:   c.PrivateKeyBytes,
+	}
+}
+
+func (c *Config) PrivateKeyEd25519() ed25519.PrivateKey {
 	return ed25519.PrivateKey(c.PrivateKeyBytes)
 }
 
 func (c *Config) Address() codec.Address {
-	return auth.NewED25519Address(c.PrivateKey().PublicKey())
+	return auth.NewED25519Address(c.PrivateKeyEd25519().PublicKey())
 }
 
 func (c *Config) AddressBech32() string {
-	return codec.MustAddressBech32(consts.HRP, c.Address())
+	return c.Address().String()
 }
 
 func GetEnv(key, fallback string) string {
@@ -82,9 +93,24 @@ func LoadConfigFromEnv() (*Config, error) {
 		return nil, err
 	}
 
-	privateKeyBytes, err := base64.StdEncoding.DecodeString(GetEnv("PRIVATE_KEY_BYTES", "Mjsdj07tXw2p2pMHGwNPLc6dLSJpLBcvPLJSpk3fr9AbBX3jICl8Ka0MH1ieohaGnPGTjYjJ+9cNZ0gyPb8vpw=="))
+	balanceThreshold, err := strconv.ParseUint(GetEnv("BALANCE_THRESHOLD", "25"), 10, 64)
 	if err != nil {
 		return nil, err
+	}
+
+	// Attempt to decode as base64 first
+	privateKeyStr := GetEnv("PRIVATE_KEY_BYTES", "Mjsdj07tXw2p2pMHGwNPLc6dLSJpLBcvPLJSpk3fr9AbBX3jICl8Ka0MH1ieohaGnPGTjYjJ+9cNZ0gyPb8vpw==")
+	privateKeyBytes, err := base64.StdEncoding.DecodeString(privateKeyStr)
+	if err == nil && len(privateKeyBytes) == ed25519.PrivateKeyLen {
+		// Successfully decoded as base64 and the length is correct
+		fmt.Println("Decoded private key as base64 successfully.")
+	} else {
+		// If base64 decoding fails, try hex decoding
+		privateKeyBytes, err = codec.LoadHex(strings.TrimSpace(privateKeyStr), ed25519.PrivateKeyLen)
+		if err != nil {
+			return nil, fmt.Errorf("failed to decode private key string: input is not valid hex or length mismatch")
+		}
+		fmt.Println("Decoded key as hex successfully.")
 	}
 
 	postgresPort, err := strconv.Atoi(GetEnv("POSTGRES_PORT", "5432"))
@@ -98,19 +124,22 @@ func LoadConfigFromEnv() (*Config, error) {
 		postgresSSLMode = "require"
 	}
 
+	nuklaiRPC := GetEnv("NUKLAI_RPC", "http://127.0.0.1:9650")
+
 	return &Config{
 		HTTPHost: GetEnv("HOST", ""),
 		HTTPPort: port,
 
 		PrivateKeyBytes: privateKeyBytes,
 
-		NuklaiRPC:             os.Getenv("NUKLAI_RPC"),
+		NuklaiRPC:             fmt.Sprintf("%s/ext/bc/%s", nuklaiRPC, consts.Name),
 		Amount:                amount,
 		StartDifficulty:       uint16(startDifficulty),
 		SolutionsPerSalt:      solutionsPerSalt,
 		TargetDurationPerSalt: targetDurationPerSalt,
 
-		AdminToken: GetEnv("ADMIN_TOKEN", "ADMIN_TOKEN"),
+		AdminToken:       GetEnv("ADMIN_TOKEN", "ADMIN_TOKEN"),
+		BalanceThreshold: balanceThreshold,
 
 		PostgresHost:     GetEnv("POSTGRES_HOST", "localhost"),
 		PostgresPort:     postgresPort,

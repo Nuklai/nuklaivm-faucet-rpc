@@ -9,26 +9,33 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
-	"strings"
 
 	"github.com/ava-labs/avalanchego/ids"
 	"github.com/ava-labs/avalanchego/utils/logging"
-	"github.com/ava-labs/avalanchego/utils/set"
-	"github.com/ava-labs/avalanchego/utils/timer"
+	"github.com/ava-labs/hypersdk/api/jsonrpc"
+	"github.com/ava-labs/hypersdk/api/ws"
+	"github.com/ava-labs/hypersdk/auth"
 	"github.com/ava-labs/hypersdk/chain"
 	"github.com/ava-labs/hypersdk/codec"
 	"github.com/ava-labs/hypersdk/pubsub"
-	"github.com/ava-labs/hypersdk/rpc"
 	"github.com/ava-labs/hypersdk/utils"
+
 	fconfig "github.com/nuklai/nuklai-faucet/config"
 	"github.com/nuklai/nuklai-faucet/database"
 	"github.com/nuklai/nuklaivm/actions"
-	"github.com/nuklai/nuklaivm/auth"
-	"github.com/nuklai/nuklaivm/challenge"
-	nconsts "github.com/nuklai/nuklaivm/consts"
-	nrpc "github.com/nuklai/nuklaivm/rpc"
+	"github.com/nuklai/nuklaivm/consts"
+	"github.com/nuklai/nuklaivm/storage"
+	nutils "github.com/nuklai/nuklaivm/utils"
+	"github.com/nuklai/nuklaivm/vm"
+
+	"github.com/ava-labs/avalanchego/utils/set"
+	"github.com/ava-labs/avalanchego/utils/timer"
+
+	"github.com/nuklai/nuklai-faucet/challenge"
+
 	"go.uber.org/zap"
 )
 
@@ -36,13 +43,13 @@ type Manager struct {
 	log    logging.Logger
 	config *fconfig.Config
 
-	cli  *rpc.JSONRPCClient
-	scli *rpc.WebSocketClient
-	ncli *nrpc.JSONRPCClient
+	hyperSDKRPC *jsonrpc.JSONRPCClient
+	wsClient    *ws.WebSocketClient
+	hyperVMRPC  *vm.JSONRPCClient
 
-	factory *auth.ED25519Factory
+	factory chain.AuthFactory
 
-	l            sync.RWMutex
+	healthMu     sync.RWMutex
 	t            *timer.Timer
 	lastRotation int64
 	salt         []byte
@@ -55,31 +62,19 @@ type Manager struct {
 
 func New(logger logging.Logger, config *fconfig.Config, db *sql.DB) (*Manager, error) {
 	ctx, cancel := context.WithCancel(context.Background())
-	cli := rpc.NewJSONRPCClient(config.NuklaiRPC)
-	networkID, _, chainID, err := cli.Network(ctx)
-	if err != nil {
-		cancel()
-		return nil, err
-	}
-
-	scli, err := rpc.NewWebSocketClient(
-		config.NuklaiRPC,
-		rpc.DefaultHandshakeTimeout,
-		pubsub.MaxPendingMessages,
-		pubsub.MaxReadMessageSize,
-	)
+	hyperVMRPC := vm.NewJSONRPCClient(config.NuklaiRPC)
+	hyperSDKRPC := jsonrpc.NewJSONRPCClient(config.NuklaiRPC)
+	wsClient, err := ws.NewWebSocketClient(config.NuklaiRPC, ws.DefaultHandshakeTimeout, pubsub.MaxPendingMessages, pubsub.MaxReadMessageSize)
 	if err != nil {
 		return nil, err
 	}
-
-	ncli := nrpc.NewJSONRPCClient(config.NuklaiRPC, networkID, chainID)
 
 	dbInstance, err := database.NewDB(db)
 	if err != nil {
 		cancel()
 		return nil, err
 	}
-	m := &Manager{log: logger, config: config, cli: cli, scli: scli, ncli: ncli, factory: auth.NewED25519Factory(config.PrivateKey()), cancelFunc: cancel, db: dbInstance}
+	m := &Manager{log: logger, config: config, hyperSDKRPC: hyperSDKRPC, wsClient: wsClient, hyperVMRPC: hyperVMRPC, factory: auth.NewED25519Factory(config.PrivateKeyEd25519()), cancelFunc: cancel, db: dbInstance}
 	m.lastRotation = time.Now().Unix()
 	m.difficulty = m.config.StartDifficulty
 	m.solutions = set.NewSet[ids.ID](m.config.SolutionsPerSalt)
@@ -87,14 +82,14 @@ func New(logger logging.Logger, config *fconfig.Config, db *sql.DB) (*Manager, e
 	if err != nil {
 		return nil, err
 	}
-	bal, err := ncli.Balance(ctx, m.config.AddressBech32(), nconsts.Symbol)
+	bal, err := hyperVMRPC.Balance(ctx, m.config.AddressBech32(), consts.Symbol)
 	if err != nil {
 		return nil, err
 	}
 	m.log.Info("faucet initialized",
 		zap.String("address", m.config.AddressBech32()),
 		zap.Uint16("difficulty", m.difficulty),
-		zap.String("balance", utils.FormatBalance(bal, nconsts.Decimals)),
+		zap.String("balance", nutils.FormatBalance(bal, consts.Decimals)),
 	)
 	m.t = timer.NewTimer(m.updateDifficulty)
 	return m, nil
@@ -112,48 +107,45 @@ func (m *Manager) Run(ctx context.Context) error {
 }
 
 func (m *Manager) WebSocketreconnect() error {
-	if m.scli != nil {
+	if m.wsClient != nil {
 		m.log.Info("Closing old WS connection.")
-        m.scli.Close()
-    }
-    scli, err := rpc.NewWebSocketClient(
-        m.config.NuklaiRPC,
-        rpc.DefaultHandshakeTimeout,
-        pubsub.MaxPendingMessages,
-        pubsub.MaxReadMessageSize,
-    )
-    if err != nil {
-        return err
-    }
-    m.scli = scli
+		m.wsClient.Close()
+	}
+	wsClient, err := ws.NewWebSocketClient(
+		m.config.NuklaiRPC,
+		ws.DefaultHandshakeTimeout, pubsub.MaxPendingMessages, pubsub.MaxReadMessageSize)
+	if err != nil {
+		return err
+	}
+	m.wsClient = wsClient
 	m.log.Info("WS connection re-established.")
-    return nil
+	return nil
 }
 
-func (m *Manager) sendFundsRetry(ctx context.Context, destination codec.Address, amount uint64) (ids.ID, uint64, error) {
-    var lastErr error
-    for retries := 0; retries < 3; retries++ {
-        txID, maxFee, err := m.sendFunds(ctx, destination, amount)
-        if err == nil {
-            return txID, maxFee, nil
-        }
-        
-        if strings.Contains(err.Error(), "closed") {
-            if reconnErr := m.WebSocketreconnect(); reconnErr != nil {
-                m.log.Error("Error reconnecting to WS", zap.Error(reconnErr))
-                continue
-            }
-        }
-        
-        lastErr = err
-        time.Sleep(time.Second * time.Duration(retries+1))
-    }
-    return ids.Empty, 0, fmt.Errorf("failed after retries: %w", lastErr)
+func (m *Manager) SendFundsRetry(ctx context.Context, destination codec.Address, amount uint64) (ids.ID, uint64, error) {
+	var lastErr error
+	for retries := 0; retries < 10; retries++ {
+		txID, maxFee, err := m.sendFunds(ctx, destination, amount)
+		if err == nil {
+			return txID, maxFee, nil
+		}
+
+		if strings.Contains(err.Error(), "closed") {
+			if reconnErr := m.WebSocketreconnect(); reconnErr != nil {
+				m.log.Error("Error reconnecting to WS", zap.Error(reconnErr))
+				continue
+			}
+		}
+
+		lastErr = err
+		time.Sleep(time.Second * time.Duration(retries+1))
+	}
+	return ids.Empty, 0, fmt.Errorf("failed after retries: %w", lastErr)
 }
 
 func (m *Manager) updateDifficulty() {
-	m.l.Lock()
-	defer m.l.Unlock()
+	m.healthMu.Lock()
+	defer m.healthMu.Unlock()
 
 	now := time.Now().Unix()
 	if now-m.lastRotation < m.config.TargetDurationPerSalt/2 {
@@ -179,74 +171,86 @@ func (m *Manager) GetFaucetAddress(_ context.Context) (codec.Address, error) {
 }
 
 func (m *Manager) GetChallenge(_ context.Context) ([]byte, uint16, error) {
-	m.l.RLock()
-	defer m.l.RUnlock()
+	m.healthMu.RLock()
+	defer m.healthMu.RUnlock()
 
 	return m.salt, m.difficulty, nil
 }
 
 func (m *Manager) sendFunds(ctx context.Context, destination codec.Address, amount uint64) (ids.ID, uint64, error) {
-	parser, err := m.ncli.Parser(ctx)
+	bal, err := m.hyperVMRPC.Balance(ctx, destination.String(), consts.Symbol)
+	if err != nil {
+		m.log.Error("Failed to fetch balance", zap.Error(err))
+		return ids.Empty, 0, err
+	}
+	if bal > m.config.BalanceThreshold {
+		m.log.Warn("User balance is above threshold", zap.String("balance", nutils.FormatBalance(bal, consts.Decimals)))
+		return ids.Empty, 0, errors.New("user balance above threshold")
+	}
+
+	parser, err := m.hyperVMRPC.Parser(ctx)
 	if err != nil {
 		m.log.Error("Failed to create parser", zap.Error(err))
 		return ids.Empty, 0, err
 	}
-	_, tx, maxFee, err := m.cli.GenerateTransaction(ctx, parser, []chain.Action{&actions.Transfer{
-		To:    destination,
-		Asset: ids.Empty,
-		Value: amount,
+	_, tx, maxFee, err := m.hyperSDKRPC.GenerateTransaction(ctx, parser, []chain.Action{&actions.Transfer{
+		To:           destination,
+		AssetAddress: storage.NAIAddress,
+		Value:        amount,
 	}}, m.factory)
 	if err != nil {
 		m.log.Error("Failed to generate transaction", zap.Error(err))
 		return ids.Empty, 0, err
 	}
-	if amount < maxFee {
-		m.log.Warn("Abandoning airdrop because network fee is greater than amount", zap.String("maxFee", utils.FormatBalance(maxFee, nconsts.Decimals)))
-		return ids.Empty, 0, errors.New("network fee too high")
-	}
-	bal, err := m.ncli.Balance(ctx, m.config.AddressBech32(), nconsts.Symbol)
+	bal, err = m.hyperVMRPC.Balance(ctx, m.config.AddressBech32(), consts.Symbol)
 	if err != nil {
 		m.log.Error("Failed to fetch balance", zap.Error(err))
 		return ids.Empty, 0, err
 	}
 	if bal < maxFee+amount {
-		m.log.Warn("Faucet has insufficient funds", zap.String("balance", utils.FormatBalance(bal, nconsts.Decimals)))
+		m.log.Warn("Faucet has insufficient funds", zap.String("balance", nutils.FormatBalance(bal, consts.Decimals)))
 		return ids.Empty, 0, errors.New("insufficient balance")
 	}
 
-	if err = m.scli.RegisterTx(tx); err != nil {
+	if err = m.wsClient.RegisterTx(tx); err != nil {
 		m.log.Error("Failed to register transaction", zap.Error(err))
 		return ids.Empty, 0, err
 	}
+
+	var result *chain.Result
 	for {
-		txID, dErr, _, err := m.scli.ListenTx(ctx)
-		if dErr != nil {
-			return ids.Empty, 0, dErr
-		}
+		txID, txErr, txResult, err := m.wsClient.ListenTx(ctx)
 		if err != nil {
-			return ids.Empty, 0, err
+			if ctx.Err() == context.DeadlineExceeded {
+				return ids.Empty, 0, fmt.Errorf("failed to listen for transaction: %w", ctx.Err())
+			}
+			return ids.Empty, 0, fmt.Errorf("failed to listen for transaction: %w", err)
+		}
+		if txErr != nil {
+			return ids.Empty, 0, txErr
 		}
 		if txID == tx.ID() {
+			result = txResult
 			break
 		}
 		// TODO: don't drop these results (may be needed by a different connection)
 		m.log.Warn("skipping unexpected transaction", zap.String("txID", tx.ID().String()))
 	}
 
-	destinationAddr, err := codec.AddressBech32(nconsts.HRP, destination)
-	if err != nil {
-		m.log.Error("Failed to convert address to bech32", zap.Error(err))
-		return ids.Empty, 0, err
+	if !result.Success {
+		m.log.Error("Transaction failed", zap.String("txID", tx.ID().String()), zap.String("error", string(result.Error)))
+		return ids.Empty, 0, fmt.Errorf("transaction failed: %s", result.Error)
 	}
-	_ = m.db.SaveTransaction(tx.ID().String(), destinationAddr, amount)
-	m.log.Info("Transaction saved", zap.String("txID", tx.ID().String()), zap.String("destination", destinationAddr), zap.Uint64("amount", amount))
+
+	_ = m.db.SaveTransaction(tx.ID().String(), destination.String(), amount)
+	m.log.Info("Transaction saved", zap.String("txID", tx.ID().String()), zap.String("destination", destination.String()), zap.Uint64("amount", amount))
 
 	return tx.ID(), maxFee, err
 }
 
 func (m *Manager) SolveChallenge(ctx context.Context, solver codec.Address, salt []byte, solution []byte) (ids.ID, uint64, error) {
-	m.l.Lock()
-	defer m.l.Unlock()
+	m.healthMu.Lock()
+	defer m.healthMu.Unlock()
 
 	if !bytes.Equal(m.salt, salt) {
 		m.log.Warn("Salt expired")
@@ -262,16 +266,16 @@ func (m *Manager) SolveChallenge(ctx context.Context, solver codec.Address, salt
 		return ids.Empty, 0, errors.New("duplicate solution")
 	}
 
-	txID, maxFee, err := m.sendFundsRetry(ctx, solver, m.config.Amount)
+	txID, maxFee, err := m.SendFundsRetry(ctx, solver, m.config.Amount)
 	if err != nil {
 		m.log.Error("Failed to send funds", zap.Error(err))
 		return ids.Empty, 0, err
 	}
 	m.log.Info("Fauceted funds",
 		zap.Stringer("txID", txID),
-		zap.String("max fee", utils.FormatBalance(maxFee, nconsts.Decimals)),
-		zap.String("destination", codec.MustAddressBech32(nconsts.HRP, solver)),
-		zap.String("amount", utils.FormatBalance(m.config.Amount, nconsts.Decimals)),
+		zap.String("max fee", nutils.FormatBalance(maxFee, consts.Decimals)),
+		zap.String("destination", solver.String()),
+		zap.String("amount", nutils.FormatBalance(m.config.Amount, consts.Decimals)),
 	)
 	m.solutions.Add(solutionID)
 
@@ -294,24 +298,24 @@ func (m *Manager) SolveChallenge(ctx context.Context, solver codec.Address, salt
 }
 
 func (m *Manager) UpdateNuklaiRPC(ctx context.Context, newNuklaiRPCUrl string) error {
-	m.l.Lock()
-	defer m.l.Unlock()
+	m.healthMu.Lock()
+	defer m.healthMu.Unlock()
 
 	m.log.Info("Updating nuklaiRPC URL", zap.String("old URL", m.config.NuklaiRPC), zap.String("new URL", newNuklaiRPCUrl))
 
-	m.config.NuklaiRPC = newNuklaiRPCUrl
+	m.config.NuklaiRPC = fmt.Sprintf("%s/ext/bc/%s", newNuklaiRPCUrl, consts.Name)
 
-	cli := rpc.NewJSONRPCClient(newNuklaiRPCUrl)
-	networkID, _, chainID, err := cli.Network(ctx)
+	hyperSDKRPC := jsonrpc.NewJSONRPCClient(newNuklaiRPCUrl)
+	networkID, subnetID, chainID, err := hyperSDKRPC.Network(ctx)
 	if err != nil {
 		m.log.Error("Failed to fetch network details", zap.Error(err))
 		return fmt.Errorf("failed to fetch network details: %w", err)
 	}
-	m.log.Info("Fetched network details", zap.Uint32("network ID", networkID), zap.String("chain ID", chainID.String()))
+	m.log.Info("Fetched network details", zap.Uint32("network ID", networkID), zap.String("subnet ID", subnetID.String()), zap.String("chain ID", chainID.String()))
 
-	scli, err := rpc.NewWebSocketClient(
+	wsClient, err := ws.NewWebSocketClient(
 		newNuklaiRPCUrl,
-		rpc.DefaultHandshakeTimeout,
+		ws.DefaultHandshakeTimeout,
 		pubsub.MaxPendingMessages,
 		pubsub.MaxReadMessageSize,
 	)
@@ -319,10 +323,10 @@ func (m *Manager) UpdateNuklaiRPC(ctx context.Context, newNuklaiRPCUrl string) e
 		m.log.Error("Failed to create WebSocket client", zap.Error(err))
 		return fmt.Errorf("failed to create WebSocket client: %w", err)
 	}
-	m.scli = scli
+	m.wsClient = wsClient
 
-	m.cli = cli
-	m.ncli = nrpc.NewJSONRPCClient(newNuklaiRPCUrl, networkID, chainID)
+	m.hyperSDKRPC = hyperSDKRPC
+	m.hyperVMRPC = vm.NewJSONRPCClient(newNuklaiRPCUrl)
 
 	m.salt, err = challenge.New()
 	if err != nil {
@@ -333,7 +337,7 @@ func (m *Manager) UpdateNuklaiRPC(ctx context.Context, newNuklaiRPCUrl string) e
 	m.difficulty = m.config.StartDifficulty
 	m.lastRotation = time.Now().Unix()
 
-	bal, err := m.ncli.Balance(ctx, m.config.AddressBech32(), nconsts.Symbol)
+	bal, err := m.hyperVMRPC.Balance(ctx, m.config.AddressBech32(), consts.Symbol)
 	if err != nil {
 		return err
 	}
@@ -345,7 +349,7 @@ func (m *Manager) UpdateNuklaiRPC(ctx context.Context, newNuklaiRPCUrl string) e
 		zap.String("chain ID", chainID.String()),
 		zap.String("address", m.config.AddressBech32()),
 		zap.Uint16("difficulty", m.difficulty),
-		zap.String("balance", utils.FormatBalance(bal, nconsts.Decimals)),
+		zap.String("balance", nutils.FormatBalance(bal, consts.Decimals)),
 	)
 
 	return nil
