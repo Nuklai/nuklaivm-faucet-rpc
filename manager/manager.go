@@ -9,18 +9,16 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"strings"
 	"sync"
 	"time"
 
 	"github.com/ava-labs/avalanchego/ids"
 	"github.com/ava-labs/avalanchego/utils/logging"
+	"github.com/ava-labs/hypersdk/api/indexer"
 	"github.com/ava-labs/hypersdk/api/jsonrpc"
-	"github.com/ava-labs/hypersdk/api/ws"
 	"github.com/ava-labs/hypersdk/auth"
 	"github.com/ava-labs/hypersdk/chain"
 	"github.com/ava-labs/hypersdk/codec"
-	"github.com/ava-labs/hypersdk/pubsub"
 	"github.com/ava-labs/hypersdk/utils"
 
 	fconfig "github.com/nuklai/nuklai-faucet/config"
@@ -43,9 +41,9 @@ type Manager struct {
 	log    logging.Logger
 	config *fconfig.Config
 
-	hyperSDKRPC *jsonrpc.JSONRPCClient
-	wsClient    *ws.WebSocketClient
-	hyperVMRPC  *vm.JSONRPCClient
+	hyperSDKRPC     *jsonrpc.JSONRPCClient
+	hyperVMRPC      *vm.JSONRPCClient
+	hyperIndexerRPC *indexer.Client
 
 	factory chain.AuthFactory
 
@@ -64,17 +62,14 @@ func New(logger logging.Logger, config *fconfig.Config, db *sql.DB) (*Manager, e
 	ctx, cancel := context.WithCancel(context.Background())
 	hyperVMRPC := vm.NewJSONRPCClient(config.NuklaiRPC)
 	hyperSDKRPC := jsonrpc.NewJSONRPCClient(config.NuklaiRPC)
-	wsClient, err := ws.NewWebSocketClient(config.NuklaiRPC, ws.DefaultHandshakeTimeout, pubsub.MaxPendingMessages, pubsub.MaxReadMessageSize)
-	if err != nil {
-		return nil, err
-	}
+	hyperIndexerRPC := indexer.NewClient(config.NuklaiRPC)
 
 	dbInstance, err := database.NewDB(db)
 	if err != nil {
 		cancel()
 		return nil, err
 	}
-	m := &Manager{log: logger, config: config, hyperSDKRPC: hyperSDKRPC, wsClient: wsClient, hyperVMRPC: hyperVMRPC, factory: auth.NewED25519Factory(config.PrivateKeyEd25519()), cancelFunc: cancel, db: dbInstance}
+	m := &Manager{log: logger, config: config, hyperSDKRPC: hyperSDKRPC, hyperVMRPC: hyperVMRPC, hyperIndexerRPC: hyperIndexerRPC, factory: auth.NewED25519Factory(config.PrivateKeyEd25519()), cancelFunc: cancel, db: dbInstance}
 	m.lastRotation = time.Now().Unix()
 	m.difficulty = m.config.StartDifficulty
 	m.solutions = set.NewSet[ids.ID](m.config.SolutionsPerSalt)
@@ -106,40 +101,32 @@ func (m *Manager) Run(ctx context.Context) error {
 	return ctx.Err()
 }
 
-func (m *Manager) WebSocketreconnect() error {
-	if m.wsClient != nil {
-		m.log.Info("Closing old WS connection.")
-		m.wsClient.Close()
-	}
-	wsClient, err := ws.NewWebSocketClient(
-		m.config.NuklaiRPC,
-		ws.DefaultHandshakeTimeout, pubsub.MaxPendingMessages, pubsub.MaxReadMessageSize)
-	if err != nil {
-		return err
-	}
-	m.wsClient = wsClient
-	m.log.Info("WS connection re-established.")
-	return nil
-}
-
 func (m *Manager) SendFundsRetry(ctx context.Context, destination codec.Address, amount uint64) (ids.ID, uint64, error) {
 	var lastErr error
-	for retries := 0; retries < 10; retries++ {
+
+	for retries := 0; retries < 5; retries++ {
+		m.log.Info("SendFundsRetry attempt", zap.Int("retry", retries+1))
+
+		// Attempt to send funds
 		txID, maxFee, err := m.sendFunds(ctx, destination, amount)
 		if err == nil {
-			return txID, maxFee, nil
-		}
-
-		if strings.Contains(err.Error(), "closed") {
-			if reconnErr := m.WebSocketreconnect(); reconnErr != nil {
-				m.log.Error("Error reconnecting to WS", zap.Error(reconnErr))
-				continue
+			// Wait for transaction to complete
+			success, waitErr := m.waitForTransactionWithIndexer(ctx, txID, 55*time.Second)
+			if waitErr != nil {
+				m.log.Error("Transaction wait failed", zap.Error(waitErr))
+				return ids.Empty, 0, waitErr
+			}
+			if success {
+				return txID, maxFee, nil
 			}
 		}
 
+		// Handle errors and retry logic
+		m.log.Error("Error sending funds", zap.Error(err))
 		lastErr = err
 		time.Sleep(time.Second * time.Duration(retries+1))
 	}
+
 	return ids.Empty, 0, fmt.Errorf("failed after retries: %w", lastErr)
 }
 
@@ -177,7 +164,13 @@ func (m *Manager) GetChallenge(_ context.Context) ([]byte, uint16, error) {
 	return m.salt, m.difficulty, nil
 }
 
-func (m *Manager) sendFunds(ctx context.Context, destination codec.Address, amount uint64) (ids.ID, uint64, error) {
+func (m *Manager) sendFunds(_ctx context.Context, destination codec.Address, amount uint64) (ids.ID, uint64, error) {
+	ctx, cancel := context.WithTimeout(_ctx, 30*time.Second)
+	defer cancel()
+
+	m.log.Info("Attempting to send funds", zap.String("destination", destination.String()), zap.Uint64("amount", amount))
+
+	// Check user balance
 	bal, err := m.hyperVMRPC.Balance(ctx, destination.String(), consts.Symbol)
 	if err != nil {
 		m.log.Error("Failed to fetch balance", zap.Error(err))
@@ -188,12 +181,23 @@ func (m *Manager) sendFunds(ctx context.Context, destination codec.Address, amou
 		return ids.Empty, 0, errors.New("user balance above threshold")
 	}
 
+	// Check faucet balanace
+	bal, err = m.hyperVMRPC.Balance(ctx, m.config.AddressBech32(), consts.Symbol)
+	if err != nil {
+		m.log.Error("Failed to fetch balance", zap.Error(err))
+		return ids.Empty, 0, err
+	}
+	if bal < amount*2 {
+		m.log.Warn("Faucet has insufficient funds", zap.String("balance", nutils.FormatBalance(bal, consts.Decimals)))
+		return ids.Empty, 0, errors.New("insufficient balance")
+	}
+
 	parser, err := m.hyperVMRPC.Parser(ctx)
 	if err != nil {
 		m.log.Error("Failed to create parser", zap.Error(err))
 		return ids.Empty, 0, err
 	}
-	_, tx, maxFee, err := m.hyperSDKRPC.GenerateTransaction(ctx, parser, []chain.Action{&actions.Transfer{
+	submitTxFunc, tx, _, err := m.hyperSDKRPC.GenerateTransaction(ctx, parser, []chain.Action{&actions.Transfer{
 		To:           destination,
 		AssetAddress: storage.NAIAddress,
 		Value:        amount,
@@ -202,50 +206,62 @@ func (m *Manager) sendFunds(ctx context.Context, destination codec.Address, amou
 		m.log.Error("Failed to generate transaction", zap.Error(err))
 		return ids.Empty, 0, err
 	}
-	bal, err = m.hyperVMRPC.Balance(ctx, m.config.AddressBech32(), consts.Symbol)
+
+	m.log.Info("Generated transaction", zap.String("txID", tx.ID().String()))
+
+	// Submit the transaction
+	err = submitTxFunc(ctx)
 	if err != nil {
-		m.log.Error("Failed to fetch balance", zap.Error(err))
-		return ids.Empty, 0, err
-	}
-	if bal < maxFee+amount {
-		m.log.Warn("Faucet has insufficient funds", zap.String("balance", nutils.FormatBalance(bal, consts.Decimals)))
-		return ids.Empty, 0, errors.New("insufficient balance")
-	}
-
-	if err = m.wsClient.RegisterTx(tx); err != nil {
-		m.log.Error("Failed to register transaction", zap.Error(err))
+		m.log.Error("Failed to submit transaction", zap.Error(err))
 		return ids.Empty, 0, err
 	}
 
-	var result *chain.Result
-	for {
-		txID, txErr, txResult, err := m.wsClient.ListenTx(ctx)
-		if err != nil {
-			if ctx.Err() == context.DeadlineExceeded {
-				return ids.Empty, 0, fmt.Errorf("failed to listen for transaction: %w", ctx.Err())
-			}
-			return ids.Empty, 0, fmt.Errorf("failed to listen for transaction: %w", err)
-		}
-		if txErr != nil {
-			return ids.Empty, 0, txErr
-		}
-		if txID == tx.ID() {
-			result = txResult
-			break
-		}
-		// TODO: don't drop these results (may be needed by a different connection)
-		m.log.Warn("skipping unexpected transaction", zap.String("txID", tx.ID().String()))
-	}
+	// Log success
+	m.log.Info("Transaction submitted successfully",
+		zap.String("txID", tx.ID().String()),
+		zap.String("destination", destination.String()),
+		zap.Uint64("amount", amount),
+	)
 
-	if !result.Success {
-		m.log.Error("Transaction failed", zap.String("txID", tx.ID().String()), zap.String("error", string(result.Error)))
-		return ids.Empty, 0, fmt.Errorf("transaction failed: %s", result.Error)
-	}
-
+	// Save transaction details to database
 	_ = m.db.SaveTransaction(tx.ID().String(), destination.String(), amount)
-	m.log.Info("Transaction saved", zap.String("txID", tx.ID().String()), zap.String("destination", destination.String()), zap.Uint64("amount", amount))
 
-	return tx.ID(), maxFee, err
+	return tx.ID(), amount, nil
+}
+
+func (m *Manager) waitForTransactionWithIndexer(ctx context.Context, txID ids.ID, timeout time.Duration) (bool, error) {
+	startTime := time.Now()
+
+	for retries := 0; retries < 10; retries++ {
+		// Check if we've exceeded the timeout
+		if time.Since(startTime) > timeout {
+			return false, fmt.Errorf("transaction wait timed out")
+		}
+
+		// Call the GetTx method of hyperIndexerRPC
+		resp, found, err := m.hyperIndexerRPC.GetTx(ctx, txID)
+		if err != nil {
+			m.log.Error("Error calling hyperIndexerRPC.GetTx", zap.Error(err))
+			return false, err
+		}
+
+		if found {
+			if resp.Success {
+				m.log.Info("Transaction successful", zap.String("txID", txID.String()))
+				return true, nil
+			}
+			m.log.Warn("Transaction failed", zap.String("txID", txID.String()))
+			return false, fmt.Errorf("transaction failed")
+		}
+
+		// Log and retry if the transaction is not found
+		m.log.Info("Transaction not found yet, retrying...", zap.String("txID", txID.String()), zap.Int("retry", retries+1))
+
+		// Exponential backoff for retries
+		time.Sleep(time.Duration(100*(retries+1)) * time.Millisecond)
+	}
+
+	return false, fmt.Errorf("transaction status check failed after retries")
 }
 
 func (m *Manager) SolveChallenge(ctx context.Context, solver codec.Address, salt []byte, solution []byte) (ids.ID, uint64, error) {
@@ -312,18 +328,6 @@ func (m *Manager) UpdateNuklaiRPC(ctx context.Context, newNuklaiRPCUrl string) e
 		return fmt.Errorf("failed to fetch network details: %w", err)
 	}
 	m.log.Info("Fetched network details", zap.Uint32("network ID", networkID), zap.String("subnet ID", subnetID.String()), zap.String("chain ID", chainID.String()))
-
-	wsClient, err := ws.NewWebSocketClient(
-		newNuklaiRPCUrl,
-		ws.DefaultHandshakeTimeout,
-		pubsub.MaxPendingMessages,
-		pubsub.MaxReadMessageSize,
-	)
-	if err != nil {
-		m.log.Error("Failed to create WebSocket client", zap.Error(err))
-		return fmt.Errorf("failed to create WebSocket client: %w", err)
-	}
-	m.wsClient = wsClient
 
 	m.hyperSDKRPC = hyperSDKRPC
 	m.hyperVMRPC = vm.NewJSONRPCClient(newNuklaiRPCUrl)

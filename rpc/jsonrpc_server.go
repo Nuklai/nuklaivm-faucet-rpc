@@ -45,11 +45,6 @@ type FaucetAddressReply struct {
 }
 
 func (j *JSONRPCServer) FaucetAddress(req *http.Request, _ *struct{}, reply *FaucetAddressReply) (err error) {
-	// Retrieve client IP
-	clientIP := req.RemoteAddr
-	if !getRateLimiter(clientIP).Allow() {
-		return fmt.Errorf("rate limit exceeded for IP %s", clientIP)
-	}
 	addr, err := j.m.GetFaucetAddress(req.Context())
 	if err != nil {
 		return err
@@ -64,6 +59,12 @@ type ChallengeReply struct {
 }
 
 func (j *JSONRPCServer) Challenge(req *http.Request, _ *struct{}, reply *ChallengeReply) (err error) {
+	// Retrieve client IP
+	clientIP := req.RemoteAddr
+	if !getRateLimiter(clientIP).Allow() {
+		return fmt.Errorf("rate limit exceeded for IP %s", clientIP)
+	}
+
 	salt, difficulty, err := j.m.GetChallenge(req.Context())
 	if err != nil {
 		return err
