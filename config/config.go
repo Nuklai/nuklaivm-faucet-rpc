@@ -70,7 +70,7 @@ func LoadConfigFromEnv() (*Config, error) {
 		return nil, err
 	}
 
-	amount, err := strconv.ParseUint(GetEnv("AMOUNT", "100000000"), 10, 64)
+	amount, err := strconv.ParseUint(GetEnv("AMOUNT", "1000000000"), 10, 64)
 	if err != nil {
 		return nil, err
 	}

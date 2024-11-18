@@ -5,6 +5,7 @@ package rpc
 
 import (
 	"errors"
+	"fmt"
 	"net/http"
 	"sync"
 	"time"
@@ -62,6 +63,11 @@ type RequestTestFundsReply struct {
 }
 
 func (j *JSONRPCServer) RequestTestFunds(req *http.Request, args *RequestTestFundsArgs, reply *RequestTestFundsReply) error {
+	// Retrieve client IP
+	clientIP := req.RemoteAddr
+	if !getRateLimiter(clientIP).Allow() {
+		return fmt.Errorf("rate limit exceeded for IP %s", clientIP)
+	}
 	addr, err := codec.StringToAddress(args.Address)
 	if err != nil {
 		return err
