@@ -38,12 +38,9 @@ type Manager struct {
 	hyperVMRPC      *vm.JSONRPCClient
 	hyperIndexerRPC *indexer.Client
 
-	factory chain.AuthFactory
-
-	healthMu   sync.RWMutex
-	cancelFunc context.CancelFunc
-
-	db *database.DB
+	factory  chain.AuthFactory
+	healthMu sync.RWMutex
+	db       *database.DB
 }
 
 func New(logger logging.Logger, config *fconfig.Config, db *sql.DB) (*Manager, error) {
@@ -57,7 +54,7 @@ func New(logger logging.Logger, config *fconfig.Config, db *sql.DB) (*Manager, e
 		cancel()
 		return nil, err
 	}
-	m := &Manager{log: logger, config: config, hyperSDKRPC: hyperSDKRPC, hyperVMRPC: hyperVMRPC, hyperIndexerRPC: hyperIndexerRPC, factory: auth.NewED25519Factory(config.PrivateKeyEd25519()), cancelFunc: cancel, db: dbInstance}
+	m := &Manager{log: logger, config: config, hyperSDKRPC: hyperSDKRPC, hyperVMRPC: hyperVMRPC, hyperIndexerRPC: hyperIndexerRPC, factory: auth.NewED25519Factory(config.PrivateKeyEd25519()), db: dbInstance}
 	bal, err := hyperVMRPC.Balance(ctx, m.config.AddressBech32(), consts.Symbol)
 	if err != nil {
 		return nil, err
@@ -87,7 +84,7 @@ func (m *Manager) SendFundsRetry(ctx context.Context, destination codec.Address,
 		txID, maxFee, err := m.sendFunds(ctx, destination, amount)
 		if err == nil {
 			// Wait for transaction to complete
-			success, waitErr := m.waitForTransactionWithIndexer(ctx, txID, 55*time.Second)
+			success, waitErr := m.waitForTransactionWithIndexer(ctx, txID, 30*time.Second)
 			if waitErr != nil {
 				m.log.Error("Transaction wait failed", zap.Error(waitErr))
 				return ids.Empty, 0, waitErr
@@ -232,11 +229,11 @@ func (m *Manager) UpdateNuklaiRPC(ctx context.Context, newNuklaiRPCUrl string) e
 	m.healthMu.Lock()
 	defer m.healthMu.Unlock()
 
+	newNuklaiRPCUrl = fmt.Sprintf("%s/ext/bc/%s", newNuklaiRPCUrl, consts.Name)
 	m.log.Info("Updating nuklaiRPC URL", zap.String("old URL", m.config.NuklaiRPC), zap.String("new URL", newNuklaiRPCUrl))
+	m.config.NuklaiRPC = newNuklaiRPCUrl
 
-	m.config.NuklaiRPC = fmt.Sprintf("%s/ext/bc/%s", newNuklaiRPCUrl, consts.Name)
-
-	hyperSDKRPC := jsonrpc.NewJSONRPCClient(newNuklaiRPCUrl)
+	hyperSDKRPC := jsonrpc.NewJSONRPCClient(m.config.NuklaiRPC)
 	networkID, subnetID, chainID, err := hyperSDKRPC.Network(ctx)
 	if err != nil {
 		m.log.Error("Failed to fetch network details", zap.Error(err))
@@ -245,7 +242,8 @@ func (m *Manager) UpdateNuklaiRPC(ctx context.Context, newNuklaiRPCUrl string) e
 	m.log.Info("Fetched network details", zap.Uint32("network ID", networkID), zap.String("subnet ID", subnetID.String()), zap.String("chain ID", chainID.String()))
 
 	m.hyperSDKRPC = hyperSDKRPC
-	m.hyperVMRPC = vm.NewJSONRPCClient(newNuklaiRPCUrl)
+	m.hyperVMRPC = vm.NewJSONRPCClient(m.config.NuklaiRPC)
+	m.hyperIndexerRPC = indexer.NewClient(m.config.NuklaiRPC)
 
 	bal, err := m.hyperVMRPC.Balance(ctx, m.config.AddressBech32(), consts.Symbol)
 	if err != nil {
@@ -253,7 +251,7 @@ func (m *Manager) UpdateNuklaiRPC(ctx context.Context, newNuklaiRPCUrl string) e
 	}
 
 	m.log.Info("RPC client has been updated and manager reinitialized",
-		zap.String("new RPC URL", newNuklaiRPCUrl),
+		zap.String("new RPC URL", m.config.NuklaiRPC),
 		zap.Uint32("network ID", networkID),
 		zap.String("chain ID", chainID.String()),
 		zap.String("address", m.config.AddressBech32()),

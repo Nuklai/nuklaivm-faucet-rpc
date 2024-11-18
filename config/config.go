@@ -75,7 +75,7 @@ func LoadConfigFromEnv() (*Config, error) {
 		return nil, err
 	}
 
-	balanceThreshold, err := strconv.ParseUint(GetEnv("BALANCE_THRESHOLD", "25"), 10, 64)
+	balanceThreshold, err := strconv.ParseUint(GetEnv("BALANCE_THRESHOLD", "10000000000"), 10, 64)
 	if err != nil {
 		return nil, err
 	}

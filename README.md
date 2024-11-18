@@ -58,34 +58,40 @@ You can use the scripts/db.sh script to interact with the SQLite database.
   ./scripts/db.sh get-transactions-by-user <WalletAddress>
   ```
 
+### RPC API Endpoints
+
+You can interact with the JSON RPC API to request NAI and do other things.
+
+- Check health status
+
+```bash
+curl 127.0.0.1:10591/health
+```
+
+- Get the faucet address that's used for funding other accounts
+
+```bash
+curl -X POST --data '{
+    "jsonrpc": "2.0",
+    "method": "faucet.faucetAddress",
+    "params": {},
+    "id": 1
+}' -H 'content-type:application/json;' 127.0.0.1:10591/faucet
+```
+
+- Request some test NAI at `00e296a1f7085fcc3f18580f1bbe0b7c56b0ec7e962372105dafc7d86f20a0765b`
+
+```bash
+curl -X POST --data '{
+    "jsonrpc": "2.0",
+    "method": "faucet.requestTestFunds",
+    "params": {
+        "address": "00e296a1f7085fcc3f18580f1bbe0b7c56b0ec7e962372105dafc7d86f20a0765b"
+    },
+    "id": 1
+}' -H 'content-type:application/json;' 127.0.0.1:10591/faucet
+```
+
 ## How does the faucet work?
 
 The faucet service is designed to distribute test NAI tokens to users, primarily for testing purposes on the Nuklai blockchain. The main components of the service include the main server setup, configuration management, database interaction, a manager that handles the faucet logic, and an RPC server for client interactions.
-
-### Workflow
-
-1. **User Requests a Challenge**:
-
-   - The user calls the `Challenge` method on the JSON-RPC server.
-   - The server responds with the current salt and difficulty.
-
-2. **User Solves the Challenge**:
-
-   - The user computes a solution for the provided challenge.
-   - The user submits the solution via the `SolveChallenge` method.
-   - The server verifies the solution:
-     - If valid, it transfers the specified amount of tokens to the user's address.
-     - The transaction is saved in the PostgreSQL database.
-
-3. **Challenge Rotation**:
-
-   - The manager periodically rotates the salt and adjusts the difficulty based on the number of solutions.
-
-4. **Health Check**:
-
-   - A simple health check endpoint is available at `/health` to verify the service is running.
-
-5. **Dynamic Configuration**:
-   - An authorized admin can update the RPC URL using the `UpdateNuklaiRPC` method with the correct admin token.
-
-This setup ensures the faucet service can handle requests efficiently, manage challenges dynamically, and provide necessary endpoints for client interactions.
