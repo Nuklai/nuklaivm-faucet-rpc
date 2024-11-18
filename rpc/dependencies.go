@@ -13,8 +13,7 @@ import (
 
 type Manager interface {
 	GetFaucetAddress(context.Context) (codec.Address, error)
-	GetChallenge(context.Context) ([]byte, uint16, error)
-	SolveChallenge(context.Context, codec.Address, []byte, []byte) (ids.ID, uint64, error)
+	RequestTestFunds(context.Context, codec.Address) (ids.ID, uint64, error)
 	UpdateNuklaiRPC(context.Context, string) error
 	Config() *config.Config
 }

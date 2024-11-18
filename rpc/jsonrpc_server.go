@@ -5,7 +5,6 @@ package rpc
 
 import (
 	"errors"
-	"fmt"
 	"net/http"
 	"sync"
 	"time"
@@ -53,44 +52,21 @@ func (j *JSONRPCServer) FaucetAddress(req *http.Request, _ *struct{}, reply *Fau
 	return nil
 }
 
-type ChallengeReply struct {
-	Salt       []byte `json:"salt"`
-	Difficulty uint16 `json:"difficulty"`
+type RequestTestFundsArgs struct {
+	Address string `json:"address"`
 }
 
-func (j *JSONRPCServer) Challenge(req *http.Request, _ *struct{}, reply *ChallengeReply) (err error) {
-	// Retrieve client IP
-	clientIP := req.RemoteAddr
-	if !getRateLimiter(clientIP).Allow() {
-		return fmt.Errorf("rate limit exceeded for IP %s", clientIP)
-	}
-
-	salt, difficulty, err := j.m.GetChallenge(req.Context())
-	if err != nil {
-		return err
-	}
-	reply.Salt = salt
-	reply.Difficulty = difficulty
-	return nil
-}
-
-type SolveChallengeArgs struct {
-	Address  string `json:"address"`
-	Salt     []byte `json:"salt"`
-	Solution []byte `json:"solution"`
-}
-
-type SolveChallengeReply struct {
+type RequestTestFundsReply struct {
 	TxID   ids.ID `json:"txID"`
 	Amount uint64 `json:"amount"`
 }
 
-func (j *JSONRPCServer) SolveChallenge(req *http.Request, args *SolveChallengeArgs, reply *SolveChallengeReply) error {
+func (j *JSONRPCServer) RequestTestFunds(req *http.Request, args *RequestTestFundsArgs, reply *RequestTestFundsReply) error {
 	addr, err := codec.StringToAddress(args.Address)
 	if err != nil {
 		return err
 	}
-	txID, amount, err := j.m.SolveChallenge(req.Context(), addr, args.Salt, args.Solution)
+	txID, amount, err := j.m.RequestTestFunds(req.Context(), addr)
 	if err != nil {
 		return err
 	}

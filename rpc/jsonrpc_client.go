@@ -40,26 +40,13 @@ func (cli *JSONRPCClient) FaucetAddress(ctx context.Context) (string, error) {
 	return resp.Address, err
 }
 
-func (cli *JSONRPCClient) Challenge(ctx context.Context) ([]byte, uint16, error) {
-	resp := new(ChallengeReply)
+func (cli *JSONRPCClient) RequestTestFunds(ctx context.Context, addr string) (ids.ID, uint64, error) {
+	resp := new(RequestTestFundsReply)
 	err := cli.requester.SendRequest(
 		ctx,
-		"challenge",
-		nil,
-		resp,
-	)
-	return resp.Salt, resp.Difficulty, err
-}
-
-func (cli *JSONRPCClient) SolveChallenge(ctx context.Context, addr string, salt []byte, solution []byte) (ids.ID, uint64, error) {
-	resp := new(SolveChallengeReply)
-	err := cli.requester.SendRequest(
-		ctx,
-		"solveChallenge",
-		&SolveChallengeArgs{
-			Address:  addr,
-			Salt:     salt,
-			Solution: solution,
+		"requestTestFunds",
+		&RequestTestFundsArgs{
+			Address: addr,
 		},
 		resp,
 	)

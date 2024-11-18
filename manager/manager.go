@@ -4,7 +4,6 @@
 package manager
 
 import (
-	"bytes"
 	"context"
 	"database/sql"
 	"errors"
@@ -19,7 +18,6 @@ import (
 	"github.com/ava-labs/hypersdk/auth"
 	"github.com/ava-labs/hypersdk/chain"
 	"github.com/ava-labs/hypersdk/codec"
-	"github.com/ava-labs/hypersdk/utils"
 
 	fconfig "github.com/nuklai/nuklai-faucet/config"
 	"github.com/nuklai/nuklai-faucet/database"
@@ -28,11 +26,6 @@ import (
 	"github.com/nuklai/nuklaivm/storage"
 	nutils "github.com/nuklai/nuklaivm/utils"
 	"github.com/nuklai/nuklaivm/vm"
-
-	"github.com/ava-labs/avalanchego/utils/set"
-	"github.com/ava-labs/avalanchego/utils/timer"
-
-	"github.com/nuklai/nuklai-faucet/challenge"
 
 	"go.uber.org/zap"
 )
@@ -47,13 +40,8 @@ type Manager struct {
 
 	factory chain.AuthFactory
 
-	healthMu     sync.RWMutex
-	t            *timer.Timer
-	lastRotation int64
-	salt         []byte
-	difficulty   uint16
-	solutions    set.Set[ids.ID]
-	cancelFunc   context.CancelFunc
+	healthMu   sync.RWMutex
+	cancelFunc context.CancelFunc
 
 	db *database.DB
 }
@@ -70,32 +58,20 @@ func New(logger logging.Logger, config *fconfig.Config, db *sql.DB) (*Manager, e
 		return nil, err
 	}
 	m := &Manager{log: logger, config: config, hyperSDKRPC: hyperSDKRPC, hyperVMRPC: hyperVMRPC, hyperIndexerRPC: hyperIndexerRPC, factory: auth.NewED25519Factory(config.PrivateKeyEd25519()), cancelFunc: cancel, db: dbInstance}
-	m.lastRotation = time.Now().Unix()
-	m.difficulty = m.config.StartDifficulty
-	m.solutions = set.NewSet[ids.ID](m.config.SolutionsPerSalt)
-	m.salt, err = challenge.New()
-	if err != nil {
-		return nil, err
-	}
 	bal, err := hyperVMRPC.Balance(ctx, m.config.AddressBech32(), consts.Symbol)
 	if err != nil {
 		return nil, err
 	}
 	m.log.Info("faucet initialized",
 		zap.String("address", m.config.AddressBech32()),
-		zap.Uint16("difficulty", m.difficulty),
 		zap.String("balance", nutils.FormatBalance(bal, consts.Decimals)),
 	)
-	m.t = timer.NewTimer(m.updateDifficulty)
 	return m, nil
 }
 
 func (m *Manager) Run(ctx context.Context) error {
 	m.log.Info("Manager run started")
-	m.t.SetTimeoutIn(time.Duration(m.config.TargetDurationPerSalt) * time.Second)
-	go m.t.Dispatch()
 	<-ctx.Done()
-	m.t.Stop()
 	m.db.Close()
 	m.log.Info("Manager run completed", zap.Error(ctx.Err()))
 	return ctx.Err()
@@ -130,38 +106,8 @@ func (m *Manager) SendFundsRetry(ctx context.Context, destination codec.Address,
 	return ids.Empty, 0, fmt.Errorf("failed after retries: %w", lastErr)
 }
 
-func (m *Manager) updateDifficulty() {
-	m.healthMu.Lock()
-	defer m.healthMu.Unlock()
-
-	now := time.Now().Unix()
-	if now-m.lastRotation < m.config.TargetDurationPerSalt/2 {
-		return
-	}
-
-	if m.difficulty > m.config.StartDifficulty && m.solutions.Len() == 0 {
-		m.difficulty--
-		m.log.Info("Decreasing faucet difficulty", zap.Uint16("new difficulty", m.difficulty))
-	}
-	m.lastRotation = time.Now().Unix()
-	salt, err := challenge.New()
-	if err != nil {
-		panic(err)
-	}
-	m.salt = salt
-	m.solutions.Clear()
-	m.t.SetTimeoutIn(time.Duration(m.config.TargetDurationPerSalt) * time.Second)
-}
-
 func (m *Manager) GetFaucetAddress(_ context.Context) (codec.Address, error) {
 	return m.config.Address(), nil
-}
-
-func (m *Manager) GetChallenge(_ context.Context) ([]byte, uint16, error) {
-	m.healthMu.RLock()
-	defer m.healthMu.RUnlock()
-
-	return m.salt, m.difficulty, nil
 }
 
 func (m *Manager) sendFunds(_ctx context.Context, destination codec.Address, amount uint64) (ids.ID, uint64, error) {
@@ -264,23 +210,9 @@ func (m *Manager) waitForTransactionWithIndexer(ctx context.Context, txID ids.ID
 	return false, fmt.Errorf("transaction status check failed after retries")
 }
 
-func (m *Manager) SolveChallenge(ctx context.Context, solver codec.Address, salt []byte, solution []byte) (ids.ID, uint64, error) {
+func (m *Manager) RequestTestFunds(ctx context.Context, solver codec.Address) (ids.ID, uint64, error) {
 	m.healthMu.Lock()
 	defer m.healthMu.Unlock()
-
-	if !bytes.Equal(m.salt, salt) {
-		m.log.Warn("Salt expired")
-		return ids.Empty, 0, errors.New("salt expired")
-	}
-	if !challenge.Verify(salt, solution, m.difficulty) {
-		m.log.Warn("Invalid solution")
-		return ids.Empty, 0, errors.New("invalid solution")
-	}
-	solutionID := utils.ToID(solution)
-	if m.solutions.Contains(solutionID) {
-		m.log.Warn("Duplicate solution")
-		return ids.Empty, 0, errors.New("duplicate solution")
-	}
 
 	txID, maxFee, err := m.SendFundsRetry(ctx, solver, m.config.Amount)
 	if err != nil {
@@ -293,23 +225,6 @@ func (m *Manager) SolveChallenge(ctx context.Context, solver codec.Address, salt
 		zap.String("destination", solver.String()),
 		zap.String("amount", nutils.FormatBalance(m.config.Amount, consts.Decimals)),
 	)
-	m.solutions.Add(solutionID)
-
-	if m.solutions.Len() >= m.config.SolutionsPerSalt {
-		// m.difficulty++
-		// m.log.Info("Increasing faucet difficulty", zap.Uint16("new difficulty", m.difficulty))
-		m.lastRotation = time.Now().Unix()
-		m.salt, err = challenge.New()
-		if err != nil {
-			m.log.Error("Failed to generate new salt", zap.Error(err))
-			return ids.Empty, 0, err
-		}
-		m.solutions.Clear()
-		m.t.Cancel()
-		m.t.SetTimeoutIn(time.Duration(m.config.TargetDurationPerSalt) * time.Second)
-		m.log.Info("Salt updated", zap.Uint16("new difficulty", m.difficulty))
-		// m.log.Info("Salt and difficulty updated due to hitting expected solutions", zap.Uint16("new difficulty", m.difficulty))
-	}
 	return txID, m.config.Amount, nil
 }
 
@@ -332,27 +247,16 @@ func (m *Manager) UpdateNuklaiRPC(ctx context.Context, newNuklaiRPCUrl string) e
 	m.hyperSDKRPC = hyperSDKRPC
 	m.hyperVMRPC = vm.NewJSONRPCClient(newNuklaiRPCUrl)
 
-	m.salt, err = challenge.New()
-	if err != nil {
-		m.log.Error("Failed to generate new salt", zap.Error(err))
-		return fmt.Errorf("failed to generate new salt: %w", err)
-	}
-	m.solutions = set.NewSet[ids.ID](m.config.SolutionsPerSalt)
-	m.difficulty = m.config.StartDifficulty
-	m.lastRotation = time.Now().Unix()
-
 	bal, err := m.hyperVMRPC.Balance(ctx, m.config.AddressBech32(), consts.Symbol)
 	if err != nil {
 		return err
 	}
-	m.t = timer.NewTimer(m.updateDifficulty)
 
 	m.log.Info("RPC client has been updated and manager reinitialized",
 		zap.String("new RPC URL", newNuklaiRPCUrl),
 		zap.Uint32("network ID", networkID),
 		zap.String("chain ID", chainID.String()),
 		zap.String("address", m.config.AddressBech32()),
-		zap.Uint16("difficulty", m.difficulty),
 		zap.String("balance", nutils.FormatBalance(bal, consts.Decimals)),
 	)
 

@@ -22,11 +22,8 @@ type Config struct {
 
 	PrivateKeyBytes []byte
 
-	NuklaiRPC             string
-	Amount                uint64
-	StartDifficulty       uint16
-	SolutionsPerSalt      int
-	TargetDurationPerSalt int64 // seconds
+	NuklaiRPC string
+	Amount    uint64
 
 	AdminToken       string
 	BalanceThreshold uint64
@@ -78,21 +75,6 @@ func LoadConfigFromEnv() (*Config, error) {
 		return nil, err
 	}
 
-	startDifficulty, err := strconv.ParseUint(GetEnv("START_DIFFICULTY", "1"), 10, 16)
-	if err != nil {
-		return nil, err
-	}
-
-	solutionsPerSalt, err := strconv.Atoi(GetEnv("SOLUTIONS_PER_SALT", "10"))
-	if err != nil {
-		return nil, err
-	}
-
-	targetDurationPerSalt, err := strconv.ParseInt(GetEnv("TARGET_DURATION_PER_SALT", "300"), 10, 64)
-	if err != nil {
-		return nil, err
-	}
-
 	balanceThreshold, err := strconv.ParseUint(GetEnv("BALANCE_THRESHOLD", "25"), 10, 64)
 	if err != nil {
 		return nil, err
@@ -132,11 +114,8 @@ func LoadConfigFromEnv() (*Config, error) {
 
 		PrivateKeyBytes: privateKeyBytes,
 
-		NuklaiRPC:             fmt.Sprintf("%s/ext/bc/%s", nuklaiRPC, consts.Name),
-		Amount:                amount,
-		StartDifficulty:       uint16(startDifficulty),
-		SolutionsPerSalt:      solutionsPerSalt,
-		TargetDurationPerSalt: targetDurationPerSalt,
+		NuklaiRPC: fmt.Sprintf("%s/ext/bc/%s", nuklaiRPC, consts.Name),
+		Amount:    amount,
 
 		AdminToken:       GetEnv("ADMIN_TOKEN", "ADMIN_TOKEN"),
 		BalanceThreshold: balanceThreshold,
