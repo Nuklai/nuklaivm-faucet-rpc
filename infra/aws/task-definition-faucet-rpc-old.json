@@ -44,7 +44,7 @@
       "secrets": [
         {
           "name": "NUKLAI_RPC",
-          "valueFrom": "arn:aws:ssm:${AWS_REGION}:${AWS_ACCOUNT_ID}:parameter/${ENVIRONMENT}/${PRODUCT}/shared/nuklaivm_rpc_url"
+          "valueFrom": "arn:aws:ssm:${AWS_REGION}:${AWS_ACCOUNT_ID}:parameter/${ENVIRONMENT}/${PRODUCT}/shared-old/nuklaivm_rpc_url"
         },
         {
           "name": "PRIVATE_KEY_BYTES",
