@@ -1,4 +1,4 @@
-name: Faucet RPC deployment
+name: Faucet RPC old deployment
 
 on:
   push:
@@ -11,7 +11,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: rpc-${{ github.ref }}-1
+  group: rpc-old-${{ github.ref }}-1
   cancel-in-progress: true
 
 env:
@@ -21,7 +21,7 @@ env:
   TASK_CPU: ${{ vars.TASK_CPU }}
   TASK_MEMORY: ${{ vars.TASK_MEMORY }}
   PRODUCT: faucet
-  APPLICATION: rpc
+  APPLICATION: rpc-old
   API_PORT: 10591
   BUILD_FOLDER: build
 
