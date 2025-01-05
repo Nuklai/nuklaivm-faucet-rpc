@@ -92,5 +92,5 @@ jobs:
       with:
         task-definition: ${{ steps.task-def.outputs.task-definition }}
         service: ${{ env.APPLICATION }}
-        cluster: ${{ env.PRODUCT }}-${{ env.APPLICATION }}-${{ env.ENVIRONMENT }}
+        cluster: ${{ env.PRODUCT }}-shared-${{ env.ENVIRONMENT }}
         wait-for-service-stability: true
