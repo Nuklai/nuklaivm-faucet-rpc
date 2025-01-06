@@ -1,45 +1,38 @@
-name: Faucet deployment
+name: Faucet RPC deployment
 
 on:
   push:
     branches:
-      - dev
-      - prod
+      - support-updated-nuklaivm
 
 permissions:
   id-token: write
   contents: read
 
+concurrency:
+  group: rpc-${{ github.ref }}-1
+  cancel-in-progress: true
+
 env:
-  PRODUCT: nuklaivm
-  COMPONENT: faucet
+  AWS_REGION: ${{ vars.AWS_REGION }}
+  ENVIRONMENT: ${{ vars.ENVIRONMENT }}
+  AWS_ACCOUNT_ID: ${{ vars.AWS_ACCOUNT_ID }}
+  TASK_CPU: ${{ vars.TASK_CPU }}
+  TASK_MEMORY: ${{ vars.TASK_MEMORY }}
+  PRODUCT: faucet
   APPLICATION: rpc
   API_PORT: 10591
-  AWS_REGION: eu-west-1
   BUILD_FOLDER: build
 
 
 jobs:
   build_and_deploy:
     runs-on: ubuntu-latest
-    environment: ${{ github.ref == 'refs/heads/prod' && 'prod' || github.ref == 'refs/heads/dev' && 'dev' || 'dev' }}
+    environment: ${{ github.ref == 'refs/heads/prod' && 'prod' || github.ref == 'refs/heads/support-updated-nuklaivm' && 'dev' || 'dev' }}
 
     steps:
     - uses: actions/checkout@v4
     - uses: actions/setup-go@v5
-
-    - name: Set dev ENV
-      if: github.ref == 'refs/heads/dev'
-      run: |
-        echo "ENV=dev" >> $GITHUB_ENV
-        echo "AWS_ACCOUNT_ID=722484512985" >> $GITHUB_ENV
-
-    - name: Set prod ENV
-      if: github.ref == 'refs/heads/prod'
-      run: |
-        echo "ENV=prod" >> $GITHUB_ENV
-        echo "AWS_ACCOUNT_ID=146563424647" >> $GITHUB_ENV
-
 
     - name: Upgrade deployment files with environment information
       uses: cschleiden/replace-tokens@v1
@@ -54,7 +47,7 @@ jobs:
     - name: Configure AWS credentials
       uses: aws-actions/configure-aws-credentials@v4
       with:
-        role-to-assume: arn:aws:iam::${{ env.AWS_ACCOUNT_ID }}:role/${{ env.PRODUCT }}-${{ env.COMPONENT }}-deployer-${{ env.AWS_REGION }}-${{ env.ENV }}
+        role-to-assume: arn:aws:iam::${{ env.AWS_ACCOUNT_ID }}:role/${{ env.PRODUCT }}-${{ env.APPLICATION }}-deployer-${{ env.AWS_REGION }}-${{ env.ENVIRONMENT }}
         aws-region: ${{ env.AWS_REGION }}
 
     - name: Login to Amazon ECR
@@ -65,7 +58,7 @@ jobs:
       id: build-image
       env:
         ECR_REGISTRY: ${{ env.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com
-        ECR_REPOSITORY: ${{ env.PRODUCT }}-${{ env.COMPONENT }}-${{ env.APPLICATION }}-${{ env.ENV }}
+        ECR_REPOSITORY: ${{ env.PRODUCT }}-${{ env.APPLICATION }}-${{ env.ENVIRONMENT }}
         IMAGE_TAG: ${{ github.sha }}
       run: |
         docker build -f Dockerfile -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
@@ -76,7 +69,7 @@ jobs:
       id: task-def
       uses: aws-actions/amazon-ecs-render-task-definition@v1
       with:
-        task-definition: infra/aws/task-definition-${{ env.COMPONENT }}-${{ env.APPLICATION }}.json
+        task-definition: infra/aws/task-definition-${{ env.PRODUCT }}-${{ env.APPLICATION }}.json
         container-name: ${{ env.APPLICATION }}
         image: ${{ steps.build-image.outputs.image }}
 
@@ -85,5 +78,5 @@ jobs:
       with:
         task-definition: ${{ steps.task-def.outputs.task-definition }}
         service: ${{ env.APPLICATION }}
-        cluster: ${{ env.PRODUCT }}-${{ env.COMPONENT }}-${{ env.ENV }}
+        cluster: ${{ env.PRODUCT }}-shared-${{ env.ENVIRONMENT }}
         wait-for-service-stability: true
