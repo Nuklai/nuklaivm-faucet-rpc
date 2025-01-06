@@ -35,19 +35,6 @@ jobs:
     - uses: actions/checkout@v4
     - uses: actions/setup-go@v5
 
-    - name: Set dev ENV
-      if: github.ref == 'refs/heads/dev'
-      run: |
-        echo "ENV=dev" >> $GITHUB_ENV
-        echo "AWS_ACCOUNT_ID=722484512985" >> $GITHUB_ENV
-
-    - name: Set prod ENV
-      if: github.ref == 'refs/heads/prod'
-      run: |
-        echo "ENV=prod" >> $GITHUB_ENV
-        echo "AWS_ACCOUNT_ID=146563424647" >> $GITHUB_ENV
-
-
     - name: Upgrade deployment files with environment information
       uses: cschleiden/replace-tokens@v1
       with:
