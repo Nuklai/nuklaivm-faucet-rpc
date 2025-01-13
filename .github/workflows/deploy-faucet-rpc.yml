@@ -3,7 +3,8 @@ name: Faucet RPC deployment
 on:
   push:
     branches:
-      - support-updated-nuklaivm
+      - dev
+      - prod
 
 permissions:
   id-token: write
@@ -78,5 +79,5 @@ jobs:
       with:
         task-definition: ${{ steps.task-def.outputs.task-definition }}
         service: ${{ env.APPLICATION }}
-        cluster: ${{ env.PRODUCT }}-shared-${{ env.ENVIRONMENT }}
+        cluster: ${{ env.PRODUCT }}-${{ env.APPLICATION }}-${{ env.ENVIRONMENT }}
         wait-for-service-stability: true
